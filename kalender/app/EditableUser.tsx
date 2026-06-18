@@ -6,6 +6,7 @@ interface DbUser {
   id: string;
   name: string;
   color: string;
+  email?: string | null;
   departmentIds: string[];
   departmentNames: string;
   vacationDays: number;
@@ -113,7 +114,17 @@ export default function EditableUser({ user, takenDays, allDepartments, onUpdate
             <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Rest Vorjahr</label>
             <input type="number" name="prevYearDays" defaultValue={prevYearDays} min="0" required className="w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
           </div>
-          
+
+          <div className="sm:col-span-2">
+            <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">E-Mail (Login)</label>
+            <input type="email" name="email" defaultValue={user.email ?? ""} className="w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+          </div>
+
+          <div className="sm:col-span-3">
+            <label className="block text-[10px] font-medium text-zinc-400 mb-0.5">Passwort</label>
+            <input type="password" name="password" placeholder="Neues Passwort (leer = unverändert)" className="w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50" />
+          </div>
+
           <div className="flex gap-1.5 justify-end">
             <button type="button" onClick={() => setIsEditing(false)} className="p-2 rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
             <button type="button" disabled={isSubmitting} onClick={handleSaveClick} className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg></button>

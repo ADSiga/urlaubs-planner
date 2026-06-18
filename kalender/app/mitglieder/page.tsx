@@ -1,38 +1,11 @@
-import path from "path";
-import sqlite3 from "sqlite3";
 import EditableUser from "../EditableUser";
 import DepartmentMultiSelect from "../components/DepartmentMultiSelect";
 import { handleCreateUser, handleUpdateUser, handleDeleteUser, handleYearRollover } from "./actions";
 import RolloverButton from "./RolloverButton";
-import { isBossModeActive } from "@/lib/boss-auth";
+import { queryDatabase } from "@/lib/db";
+import { getPrincipal } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-function queryDatabase<T>(sql: string, params: any[] = []): Promise<T[]> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READWRITE);
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      db.close();
-      if (err) reject(err);
-      else resolve(rows as T[]);
-    });
-  });
-}
-
-function runDatabase(sql: string, params: any[] = []): Promise<void> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READWRITE);
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, (err) => {
-      db.close();
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
 
 async function calculateWorkingDays(startDateStr: string, endDateStr: string): Promise<number> {
   const holidays = await queryDatabase<{ date: string }>("SELECT date FROM PublicHoliday");
@@ -59,6 +32,7 @@ interface DbUser {
   id: string;
   name: string;
   color: string;
+  email?: string | null;
   departmentIds: string[];
   departmentNames: string;
   vacationDays: number;
@@ -72,14 +46,20 @@ interface LeaveRequest {
 }
 
 export default async function MitgliederPage() {
-  const bossActive = await isBossModeActive();
+  const principal = await getPrincipal();
+  const canManage = principal?.role === "admin" || principal?.role === "boss";
 
   // 2. ALLE Abteilungen aus der globalen Tabelle holen (ID und Name)
   const allDepartments = await queryDatabase<{ id: string, name: string }>("SELECT id, name FROM Department ORDER BY name ASC");
 
+  const visibleDepartments =
+    principal?.role === "boss"
+      ? allDepartments.filter((d) => principal.departmentIds.includes(d.id))
+      : allDepartments;
+
   // 3. Nutzer und ihre Abteilungen laden
   const usersRaw = await queryDatabase<any>(`
-    SELECT u.id, u.name, u.color, GROUP_CONCAT(ud.departmentId) as departmentIds, GROUP_CONCAT(d.name, ', ') as departmentNames, u.vacationDays, u.prevYearDays 
+    SELECT u.id, u.name, u.color, u.email, GROUP_CONCAT(ud.departmentId) as departmentIds, GROUP_CONCAT(d.name, ', ') as departmentNames, u.vacationDays, u.prevYearDays
     FROM User u
     LEFT JOIN UserDepartment ud ON u.id = ud.userId
     LEFT JOIN Department d ON ud.departmentId = d.id
@@ -104,6 +84,13 @@ export default async function MitgliederPage() {
     return { ...user, takenDays };
   }));
 
+  const visibleUsers =
+    principal?.role === "boss"
+      ? usersWithTakenDays.filter((u) =>
+          u.departmentIds.some((d) => principal.departmentIds.includes(d))
+        )
+      : usersWithTakenDays;
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-6">
       <div className="grid gap-8 md:grid-cols-3">
@@ -114,7 +101,7 @@ export default async function MitgliederPage() {
             <h2 className="mb-4 text-sm font-semibold tracking-wide uppercase text-zinc-400">
               Mitglied hinzufügen
             </h2>
-            {bossActive ? (
+            {canManage ? (
               <form action={handleCreateUser} className="space-y-4">
                 <div>
                   <input type="text" name="name" placeholder="Name" required className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50" />
@@ -125,7 +112,7 @@ export default async function MitgliederPage() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-zinc-400 mb-1 px-0.5">Abteilung(en)</label>
-                  <DepartmentMultiSelect allDepartments={allDepartments} />
+                  <DepartmentMultiSelect allDepartments={visibleDepartments} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -137,6 +124,14 @@ export default async function MitgliederPage() {
                     <input type="number" name="prevYearDays" defaultValue="0" min="0" max="100" required className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50" />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 px-0.5">E-Mail (Login)</label>
+                  <input type="email" name="email" placeholder="name@firma.de" className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-zinc-400 mb-1 px-0.5">Passwort (Login)</label>
+                  <input type="password" name="password" placeholder="Initialpasswort" className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none focus:border-emerald-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50" />
+                </div>
                 <button type="submit" className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 shadow-sm">
                   Mitglied anlegen
                 </button>
@@ -144,7 +139,7 @@ export default async function MitgliederPage() {
             ) : (
               <p className="text-xs text-zinc-500 text-center py-4">Nur Administratoren können Mitglieder anlegen.</p>
             )}
-            {bossActive && <RolloverButton action={handleYearRollover} />}
+            {canManage && <RolloverButton action={handleYearRollover} />}
           </div>
         </div>
 
@@ -153,17 +148,17 @@ export default async function MitgliederPage() {
           <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <h2 className="mb-4 text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Mitglieder verwalten</h2>
             <div className="space-y-3">
-              {usersWithTakenDays.map((user) => (
+              {visibleUsers.map((user) => (
                 <EditableUser
                   key={user.id}
                   user={user}
                   takenDays={user.takenDays}
-                  allDepartments={allDepartments}
-                  onUpdate={bossActive ? handleUpdateUser : undefined}
-                  onDelete={bossActive ? handleDeleteUser : undefined}
+                  allDepartments={visibleDepartments}
+                  onUpdate={canManage ? handleUpdateUser : undefined}
+                  onDelete={canManage ? handleDeleteUser : undefined}
                 />
               ))}
-              {users.length === 0 && (
+              {visibleUsers.length === 0 && (
                 <p className="text-sm text-zinc-400 py-4 text-center">Keine Mitglieder angelegt.</p>
               )}
             </div>
