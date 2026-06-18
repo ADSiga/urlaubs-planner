@@ -75,8 +75,9 @@ export async function handleUpdateUser(formData: FormData) {
   if (!id || !name) return;
 
   // Boss may only edit a member who is in one of their departments.
+  let memberDepts: string[] = [];
   if (principal.role === "boss") {
-    const memberDepts = (
+    memberDepts = (
       await queryDatabase<{ departmentId: string }>(
         "SELECT departmentId FROM UserDepartment WHERE userId = ?",
         [id]
@@ -92,6 +93,18 @@ export async function handleUpdateUser(formData: FormData) {
     }
   }
 
+  // For a boss: preserve departments the boss does not manage (they belong to other bosses).
+  // For admin: use the submitted departmentIds unchanged.
+  const finalDeptIds =
+    principal.role === "boss"
+      ? Array.from(
+          new Set([
+            ...departmentIds,
+            ...memberDepts.filter((d) => !canManageDepartmentScope(principal, d)),
+          ])
+        )
+      : departmentIds;
+
   await runDatabase(
     `UPDATE User SET name = ?, color = ?, vacationDays = ?, prevYearDays = ?, email = ? WHERE id = ?`,
     [name, color, vacationDays, prevYearDays, email, id]
@@ -101,7 +114,7 @@ export async function handleUpdateUser(formData: FormData) {
   }
 
   await runDatabase(`DELETE FROM UserDepartment WHERE userId = ?`, [id]);
-  for (const deptId of departmentIds) {
+  for (const deptId of finalDeptIds) {
     await runDatabase(`INSERT INTO UserDepartment (userId, departmentId) VALUES (?, ?)`, [id, deptId]);
   }
 
