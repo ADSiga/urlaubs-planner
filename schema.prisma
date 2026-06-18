@@ -1,3 +1,6 @@
+// NOTE: The runtime uses raw SQL via kalender/lib/db.ts — this file is for reference only.
+// It is NOT used at runtime and does NOT need to be migrated via Prisma CLI.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,6 +12,8 @@ datasource db {
 model User {
   id           String           @id @default(cuid())
   name         String
+  email        String?          @unique
+  passwordHash String?
   color        String           @default("#3B82F6")
   role         String           @default("employee")
   createdAt    DateTime         @default(now())
@@ -23,6 +28,7 @@ model Department {
   name      String           @unique
   createdAt DateTime         @default(now())
   users     UserDepartment[]
+  bosses    BossDepartment[]
 }
 
 model UserDepartment {
@@ -41,6 +47,7 @@ model LeaveRequest {
   startDate    DateTime
   endDate      DateTime
   leaveType    String
+  leaveDetails String?  @default("")
   status       String   @default("pending")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -53,4 +60,21 @@ model PublicHoliday {
   id   String   @id @default(cuid())
   date DateTime @unique
   name String
+}
+
+model Boss {
+  id          String           @id @default(cuid())
+  name        String
+  totpSecret  String
+  createdAt   DateTime         @default(now())
+  departments BossDepartment[]
+}
+
+model BossDepartment {
+  bossId       String
+  departmentId String
+  boss         Boss       @relation(fields: [bossId], references: [id])
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@id([bossId, departmentId])
 }
