@@ -1,12 +1,11 @@
 "use server";
 
-import { verifyBossCode, loginBoss, logoutBoss } from "@/lib/boss-auth";
+import { loginStaff, logout } from "@/lib/boss-auth";
 import { revalidatePath } from "next/cache";
 
 export async function handleBossLogin(code: string): Promise<boolean> {
-  const isValid = await verifyBossCode(code);
+  const isValid = await loginStaff(code);
   if (isValid) {
-    await loginBoss();
     revalidatePath("/", "layout");
     return true;
   }
@@ -14,6 +13,6 @@ export async function handleBossLogin(code: string): Promise<boolean> {
 }
 
 export async function handleBossLogout() {
-  await logoutBoss();
+  await logout();
   revalidatePath("/", "layout");
 }
