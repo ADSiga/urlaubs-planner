@@ -34,10 +34,7 @@ export async function getOne<T>(sql: string, params: any[] = []): Promise<T | nu
   return rows[0] ?? null;
 }
 
-let initialized = false;
-
 export async function initDb(): Promise<void> {
-  if (initialized) return;
   await runDatabase(
     `CREATE TABLE IF NOT EXISTS Department (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, createdAt TEXT)`
   );
@@ -53,5 +50,4 @@ export async function initDb(): Promise<void> {
   if (!names.has("passwordHash")) await runDatabase(`ALTER TABLE User ADD COLUMN passwordHash TEXT`);
   // SQLite treats NULLs as distinct, so multiple members without email stay valid.
   await runDatabase(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON User(email)`);
-  initialized = true;
 }
