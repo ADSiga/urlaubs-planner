@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+
+# SQLite databases (live data + backups)
+*.db
+*.db-journal
+*.db.bak
+*.db.*.bak
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / IDE
+.idea/
+
+# Claude local
+.claude/

@@ -1,0 +1,9 @@
+# Aktiviert das Proxying für WebSockets
+RewriteEngine On
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^/_next/webpack-hmr(.*) ws://localhost:3000/_next/webpack-hmr$1 [P,L]
+
+# Normales HTTP-Fallback für den HMR-Endpunkt
+ProxyPass /_next/webpack-hmr http://localhost:3000/_next/webpack-hmr
+ProxyPassReverse /_next/webpack-hmr http://localhost:3000/_next/webpack-hmr

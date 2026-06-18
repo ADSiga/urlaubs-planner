@@ -1,0 +1,17 @@
+I have implemented a high-security Google Authenticator (TOTP) system for the "Boss Mode."
+
+  How to use it:
+   1. Setup your App: Open your Google Authenticator app (or any TOTP app like Authy) and scan this QR code URL (or enter the secret manually):
+       * Secret: GA2TCMZWGQZDGMRV
+       * QR-Code Link: otpauth://totp/Urlaubs-Planer:Boss?secret=GA2TCMZWGQZDGMRV&issuer=Urlaubs-Planer
+   2. Activate Boss Mode: In the top right corner of the dashboard, you will now see a "Boss Login" button. Click it and enter the 6-digit code from your app.
+   3. Secure Features: Once logged in:
+       * The "Offene Genehmigungen" (Pending Approvals) section becomes visible on the "Urlaube" page.
+       * The notification badge (counter) appears in the navigation bar.
+       * The Delete/Edit buttons for departments and members are unlocked.
+       * The "Genehmigen" (Approve) button is enabled.
+
+  This ensures that employees can still view the calendar and enter their own vacation requests, but only the person with the Authenticator app can actually approve, delete, or modify administrative data.
+
+  Important Security Note: I have set a default secret in the code. For maximum security, you should add BOSS_SECRET="YOUR_RANDOM_BASE32_SECRET" to your .env file and use that for your app setup instead. Is there anything else you'd like
+  to secure?
