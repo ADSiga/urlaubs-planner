@@ -1,37 +1,23 @@
 "use server";
 
-import path from "path";
-import sqlite3 from "sqlite3";
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
-import { isBossModeActive } from "@/lib/boss-auth";
+import { queryDatabase, runDatabase } from "@/lib/db";
+import { getPrincipal } from "@/lib/auth";
 
-// Zentrale Hilfsfunktion für Abfragen
-function queryDatabase<T>(sql: string, params: any[] = []): Promise<T[]> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READWRITE);
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      db.close();
-      if (err) reject(err);
-      else resolve(rows as T[]);
-    });
-  });
-}
-
-// Zentrale Hilfsfunktion für Änderungen
-function runDatabase(sql: string, params: any[] = []): Promise<void> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READWRITE);
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, (err) => {
-      db.close();
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+async function canActOnLeave(leaveId: string): Promise<boolean> {
+  const principal = await getPrincipal();
+  if (!principal || principal.role === "member") return false;
+  if (principal.role === "admin") return true;
+  // boss: the leave's owner must share a department with the boss
+  const rows = await queryDatabase<{ departmentId: string }>(
+    `SELECT ud.departmentId
+     FROM LeaveRequest lr
+     JOIN UserDepartment ud ON lr.userId = ud.userId
+     WHERE lr.id = ?`,
+    [leaveId]
+  );
+  return rows.some((r) => principal.departmentIds.includes(r.departmentId));
 }
 
 // 1. ACTION: Konflikte prüfen (alle Abteilungen des Benutzers)
@@ -47,7 +33,7 @@ export async function calculateWorkingDays(startDate: string, endDate: string) {
   while (current <= end) {
     const dayOfWeek = current.getDay();
     const dateStr = current.toISOString().split('T')[0];
-    
+
     // 0 = Sonntag, 6 = Samstag
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isHoliday = holidays.has(dateStr);
@@ -92,11 +78,11 @@ export async function getUserBalance(userId: string) {
 export async function checkConflicts(userId: string, startDate: string, endDate: string, excludeLeaveId?: string) {
   // Find all department IDs for the given user
   const deptResult = await queryDatabase<{ departmentId: string }>(
-    "SELECT departmentId FROM UserDepartment WHERE userId = ?", 
+    "SELECT departmentId FROM UserDepartment WHERE userId = ?",
     [userId]
   );
   const departmentIds = deptResult.map(r => r.departmentId);
-  
+
   if (departmentIds.length === 0) return [];
 
   // Check for any user who shares at least one department with the requestor
@@ -108,7 +94,7 @@ export async function checkConflicts(userId: string, startDate: string, endDate:
     WHERE ud.departmentId IN (${departmentIds.map(() => '?').join(',')})
       AND lr.userId != ?
       ${excludeLeaveId ? "AND lr.id != ?" : ""}
-      AND lr.startDate <= ? 
+      AND lr.startDate <= ?
       AND lr.endDate >= ?
     GROUP BY lr.id
   `;
@@ -132,7 +118,7 @@ export async function handleCreateLeave(formData: FormData) {
   const endDate = formData.get("endDate") as string;
   const leaveType = formData.get("leaveType") as string || "Erholungsurlaub";
   const leaveDetails = formData.get("leaveDetails") as string || "";
-  
+
   if (!userId || !startDate || !endDate) return;
 
   // --- Serverseitige Validierung: Mindestens 1 Monat im Voraus (nur bei Erholungsurlaub) ---
@@ -168,7 +154,7 @@ export async function handleCreateLeave(formData: FormData) {
   const nowIsoString = new Date().toISOString();
 
   await runDatabase(
-    `INSERT INTO LeaveRequest (id, userId, substituteId, startDate, endDate, leaveType, leaveDetails, status, createdAt, updatedAt) 
+    `INSERT INTO LeaveRequest (id, userId, substituteId, startDate, endDate, leaveType, leaveDetails, status, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
     [newRequestId, userId, substituteId, startDate, endDate, leaveType, leaveDetails, nowIsoString, nowIsoString]
   );
@@ -177,18 +163,19 @@ export async function handleCreateLeave(formData: FormData) {
 
 // 3. ACTION: Urlaub ändern
 export async function handleUpdateLeave(formData: FormData) {
-  if (!(await isBossModeActive())) {
-    console.error("Nicht autorisierter Versuch, Urlaub zu ändern!");
+  const id = formData.get("id") as string;
+  if (!id) return;
+  if (!(await canActOnLeave(id))) {
+    console.error("Nicht autorisierter / abteilungsfremder Zugriff auf Urlaubsantrag!");
     return;
   }
 
-  const id = formData.get("id") as string;
   const substituteId = formData.get("substituteId") as string;
   const startDate = formData.get("startDate") as string;
   const endDate = formData.get("endDate") as string;
   const leaveType = formData.get("leaveType") as string;
   const leaveDetails = formData.get("leaveDetails") as string || "";
-  if (!id || !startDate || !endDate || !leaveType) return;
+  if (!startDate || !endDate || !leaveType) return;
 
   await runDatabase(
     `UPDATE LeaveRequest SET substituteId = ?, startDate = ?, endDate = ?, leaveType = ?, leaveDetails = ?, updatedAt = ? WHERE id = ?`,
@@ -199,13 +186,12 @@ export async function handleUpdateLeave(formData: FormData) {
 
 // 4. ACTION: Urlaub löschen
 export async function handleDeleteLeave(formData: FormData) {
-  if (!(await isBossModeActive())) {
-    console.error("Nicht autorisierter Versuch, Urlaub zu löschen!");
-    return;
-  }
-
   const id = formData.get("id") as string;
   if (!id) return;
+  if (!(await canActOnLeave(id))) {
+    console.error("Nicht autorisierter / abteilungsfremder Zugriff auf Urlaubsantrag!");
+    return;
+  }
 
   await runDatabase(`DELETE FROM LeaveRequest WHERE id = ?`, [id]);
   revalidatePath("/urlaube");
@@ -213,13 +199,12 @@ export async function handleDeleteLeave(formData: FormData) {
 
 // 5. ACTION: Urlaub genehmigen
 export async function handleApproveLeave(formData: FormData) {
-  if (!(await isBossModeActive())) {
-    console.error("Nicht autorisierter Versuch, Urlaub zu genehmigen!");
-    return;
-  }
-
   const id = formData.get("id") as string;
   if (!id) return;
+  if (!(await canActOnLeave(id))) {
+    console.error("Nicht autorisierter / abteilungsfremder Zugriff auf Urlaubsantrag!");
+    return;
+  }
 
   await runDatabase(
     `UPDATE LeaveRequest SET status = 'GENEHMIGT', updatedAt = ? WHERE id = ?`,
