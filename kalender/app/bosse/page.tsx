@@ -6,6 +6,7 @@ import DepartmentMultiSelect from "../components/DepartmentMultiSelect";
 import BossList from "./BossList";
 import {
   handleCreateBoss,
+  handleUpdateBoss,
   handleDeleteBoss,
   handleRegenerateSecret,
 } from "./actions";
@@ -34,8 +35,11 @@ export default async function BossePage() {
     name: string;
     totpSecret: string;
     departmentNames: string | null;
+    departmentIds: string | null;
   }>(`
-    SELECT b.id, b.name, b.totpSecret, GROUP_CONCAT(d.name, ', ') as departmentNames
+    SELECT b.id, b.name, b.totpSecret,
+           GROUP_CONCAT(d.name, ', ') as departmentNames,
+           GROUP_CONCAT(bd.departmentId) as departmentIds
     FROM Boss b
     LEFT JOIN BossDepartment bd ON b.id = bd.bossId
     LEFT JOIN Department d ON bd.departmentId = d.id
@@ -50,6 +54,7 @@ export default async function BossePage() {
         id: b.id,
         name: b.name,
         departmentNames: b.departmentNames ?? "",
+        departmentIds: b.departmentIds ? b.departmentIds.split(",") : [],
         otpauthUrl,
         qrDataUrl: await QRCode.toDataURL(otpauthUrl),
       };
@@ -94,6 +99,8 @@ export default async function BossePage() {
             </h2>
             <BossList
               bosses={bosses}
+              allDepartments={allDepartments}
+              onUpdate={handleUpdateBoss}
               onDelete={handleDeleteBoss}
               onRegenerate={handleRegenerateSecret}
             />
