@@ -3,7 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 import path from "path";
 import sqlite3 from "sqlite3";
-import { isBossModeActive } from "@/lib/boss-auth";
+import { initDb } from "@/lib/db";
+import { getPrincipal } from "@/lib/auth";
 import AdminToggle from "./AdminToggle";
 import { handleBossLogin, handleBossLogout } from "./actions_auth";
 
@@ -32,8 +33,10 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  await initDb();
   const pendingCount = await getPendingCount();
-  const bossActive = await isBossModeActive();
+  const principal = await getPrincipal();
+  const bossActive = principal?.role === "admin" || principal?.role === "boss";
 
   return (
     <html lang="de">
@@ -53,6 +56,9 @@ export default async function RootLayout({
                 <Link href="/" className="hover:text-emerald-500 transition-colors">Übersicht</Link>
                 <Link href="/mitglieder" className="hover:text-emerald-500 transition-colors">Mitglieder</Link>
                 <Link href="/abteilungen" className="hover:text-emerald-500 transition-colors">Abteilungen</Link>
+                {principal?.role === "admin" && (
+                  <Link href="/bosse" className="hover:text-emerald-500 transition-colors">Bosse</Link>
+                )}
                 <Link href="/urlaube" className="relative hover:text-emerald-500 transition-colors flex items-center gap-1.5">
                   <span>Urlaube</span>
                   {bossActive && pendingCount > 0 && (
