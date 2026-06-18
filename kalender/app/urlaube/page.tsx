@@ -65,6 +65,7 @@ export default async function UrlaubePage() {
         <div className="md:col-span-1">
           <LeaveForm
             users={users}
+            currentMemberId={principal?.role === "member" ? principal.id : null}
             onCreateLeave={handleCreateLeave}
             checkConflicts={checkConflicts}
             getUserBalance={getUserBalance}

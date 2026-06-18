@@ -1,18 +1,21 @@
 "use server";
 
-import { loginStaff, logout } from "@/lib/boss-auth";
+import { loginStaff, loginMember, logout } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function handleBossLogin(code: string): Promise<boolean> {
-  const isValid = await loginStaff(code);
-  if (isValid) {
-    revalidatePath("/", "layout");
-    return true;
-  }
-  return false;
+export async function handleStaffLogin(code: string): Promise<boolean> {
+  const ok = await loginStaff(code);
+  if (ok) revalidatePath("/", "layout");
+  return ok;
 }
 
-export async function handleBossLogout() {
+export async function handleMemberLogin(email: string, password: string): Promise<boolean> {
+  const ok = await loginMember(email, password);
+  if (ok) revalidatePath("/", "layout");
+  return ok;
+}
+
+export async function handleLogout() {
   await logout();
   revalidatePath("/", "layout");
 }

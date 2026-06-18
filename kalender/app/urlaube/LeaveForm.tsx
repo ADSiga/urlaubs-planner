@@ -7,13 +7,14 @@ interface ConflictUser { userName: string; userId: string; startDate: string; en
 
 interface LeaveFormProps {
   users: DbUser[];
+  currentMemberId: string | null;
   onCreateLeave: (formData: FormData) => Promise<void>;
   checkConflicts: (userId: string, startDate: string, endDate: string) => Promise<ConflictUser[]>;
   getUserBalance: (userId: string) => Promise<{ total: number; used: number; remaining: number }>;
   calculateWorkingDays: (startDate: string, endDate: string) => Promise<number>;
 }
 
-export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUserBalance, calculateWorkingDays }: LeaveFormProps) {
+export default function LeaveForm({ users, currentMemberId, onCreateLeave, checkConflicts, getUserBalance, calculateWorkingDays }: LeaveFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [conflicts, setConflicts] = useState<ConflictUser[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,7 +28,8 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
   const [userBalance, setUserBalance] = useState<{ total: number; used: number; remaining: number } | null>(null);
   const [neededDays, setNeededDays] = useState<number>(0);
 
-  const selectedUser = users.find(u => u.id === selectedUserId);
+  const effectiveUserId = currentMemberId ?? selectedUserId;
+  const selectedUser = users.find(u => u.id === effectiveUserId);
 
   // Helper to check if two users share at least one department
   const shareDepartment = (userA: DbUser | undefined, userB: DbUser) => {
@@ -36,12 +38,12 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
   };
 
   useEffect(() => {
-    if (selectedUserId) {
-      getUserBalance(selectedUserId).then(setUserBalance);
+    if (effectiveUserId) {
+      getUserBalance(effectiveUserId).then(setUserBalance);
     } else {
       setUserBalance(null);
     }
-  }, [selectedUserId]);
+  }, [effectiveUserId]);
 
   useEffect(() => {
     if (startDate && endDate) {
@@ -50,7 +52,7 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
         setNeededDays(0);
     }
     updateConflicts();
-  }, [selectedUserId, startDate, endDate]);
+  }, [effectiveUserId, startDate, endDate]);
 
   const updateConflicts = async () => {
     if (!startDate || !endDate) {
@@ -60,11 +62,11 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
     }
     
     // Check conflicts for everyone
-    const allConflicts = await checkConflicts(selectedUserId || "none", startDate, endDate);
+    const allConflicts = await checkConflicts(effectiveUserId || "none", startDate, endDate);
     setConflictingUserIds(new Set(allConflicts.map(c => c.userId)));
-    
+
     // For general conflict display
-    if (selectedUserId) {
+    if (effectiveUserId) {
         setConflicts(allConflicts);
     }
   };
@@ -127,7 +129,7 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
       await onCreateLeave(formData);
       
       formRef.current.reset();
-      setSelectedUserId("");
+      if (!currentMemberId) setSelectedUserId("");
       setStartDate("");
       setEndDate("");
       setLeaveType("Erholungsurlaub");
@@ -153,17 +155,26 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
       {/* Wir entfernen onSubmit und action komplett, um HTML5-Blockaden zu verhindern */}
       <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="space-y-4">
         <div>
-          <select
-            name="userId"
-            value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
-            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
-          >
-            <option value="">-- Mitarbeiter wählen --</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>{user.name}</option>
-            ))}
-          </select>
+          {currentMemberId ? (
+            <>
+              <input type="hidden" name="userId" value={currentMemberId} />
+              <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+                {selectedUser?.name ?? currentMemberId}
+              </div>
+            </>
+          ) : (
+            <select
+              name="userId"
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"
+            >
+              <option value="">-- Mitarbeiter wählen --</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>{user.name}</option>
+              ))}
+            </select>
+          )}
           {userBalance && (
             <div className="mt-1.5 flex justify-between px-1">
               <span className="text-[10px] text-zinc-500">Gesamt: {userBalance.total} Tg.</span>
@@ -201,12 +212,12 @@ export default function LeaveForm({ users, onCreateLeave, checkConflicts, getUse
         <div>
           <select
             name="substituteId"
-            disabled={!selectedUserId || !startDate || !endDate}
+            disabled={!effectiveUserId || !startDate || !endDate}
             className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 disabled:opacity-50"
           >
             <option value="">-- Vertretung wählen --</option>
             {users
-              .filter(user => user.id !== selectedUserId && shareDepartment(selectedUser, user))
+              .filter(user => user.id !== effectiveUserId && shareDepartment(selectedUser, user))
               .map((user) => {
                 const isBusy = conflictingUserIds.has(user.id);
                 return (

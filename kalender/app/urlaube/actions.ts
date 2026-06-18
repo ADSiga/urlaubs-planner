@@ -121,6 +121,12 @@ export async function handleCreateLeave(formData: FormData) {
 
   if (!userId || !startDate || !endDate) return;
 
+  const principal = await getPrincipal();
+  if (principal?.role === "member" && principal.id !== userId) {
+    console.error("Mitglied versucht, Urlaub für eine andere Person einzutragen!");
+    return;
+  }
+
   // --- Serverseitige Validierung: Mindestens 1 Monat im Voraus (nur bei Erholungsurlaub) ---
   if (leaveType === "Erholungsurlaub") {
     const today = new Date();
