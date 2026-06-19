@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword } from "./password.ts";
+import { hashPassword, verifyPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
 
 test("hashPassword round-trips and rejects wrong password", () => {
   const hash = hashPassword("Sommer2026!");
@@ -17,4 +17,24 @@ test("verifyPassword rejects malformed stored values", () => {
 
 test("two hashes of same password differ (random salt)", () => {
   assert.notEqual(hashPassword("same"), hashPassword("same"));
+});
+
+test("validateNewPassword: rejects empty fields", () => {
+  assert.deepEqual(validateNewPassword("", "newpass12"), { ok: false, error: "empty" });
+  assert.deepEqual(validateNewPassword("current12", ""), { ok: false, error: "empty" });
+});
+
+test("validateNewPassword: rejects too-short new password", () => {
+  assert.deepEqual(validateNewPassword("current12", "short"), { ok: false, error: "too_short" });
+  // exactly MIN_PASSWORD_LENGTH-1 is too short
+  assert.equal(validateNewPassword("current12", "a".repeat(MIN_PASSWORD_LENGTH - 1)).ok, false);
+});
+
+test("validateNewPassword: rejects new equal to current", () => {
+  assert.deepEqual(validateNewPassword("samepass12", "samepass12"), { ok: false, error: "same_as_current" });
+});
+
+test("validateNewPassword: accepts a valid distinct new password >= 8 chars", () => {
+  assert.deepEqual(validateNewPassword("current12", "brandnew34"), { ok: true });
+  assert.deepEqual(validateNewPassword("current12", "a".repeat(MIN_PASSWORD_LENGTH)), { ok: true });
 });

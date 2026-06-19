@@ -17,3 +17,17 @@ export function verifyPassword(password: string, stored: string): boolean {
   if (expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
 }
+
+export const MIN_PASSWORD_LENGTH = 8;
+
+export type PasswordChangeError = "empty" | "too_short" | "same_as_current";
+
+export function validateNewPassword(
+  currentPassword: string,
+  newPassword: string
+): { ok: true } | { ok: false; error: PasswordChangeError } {
+  if (!currentPassword || !newPassword) return { ok: false, error: "empty" };
+  if (newPassword.length < MIN_PASSWORD_LENGTH) return { ok: false, error: "too_short" };
+  if (newPassword === currentPassword) return { ok: false, error: "same_as_current" };
+  return { ok: true };
+}
