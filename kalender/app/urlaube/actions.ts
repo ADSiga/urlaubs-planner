@@ -299,8 +299,8 @@ export async function handleResubmitLeave(formData: FormData) {
   const id = formData.get("id") as string;
   const substituteId = formData.get("substituteId") as string;
   if (!id || !substituteId) return;
-  if (!(await isOwnerOf(id))) {
-    console.error("Nur der Antragsteller darf erneut einreichen!");
+  if (!(await isOwnerOf(id)) && !(await canActOnLeave(id))) {
+    console.error("Nur der Antragsteller oder ein zuständiger Vorgesetzter darf erneut einreichen!");
     return;
   }
   const row = await getOne<{ status: string; userId: string; startDate: string; endDate: string }>(

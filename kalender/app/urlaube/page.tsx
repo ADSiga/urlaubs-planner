@@ -85,6 +85,24 @@ export default async function UrlaubePage() {
         .map((u) => ({ id: u.id, name: u.name }))
     : [];
 
+  // Boss/admin view of declined requests (department-scoped, like visiblePending).
+  const visibleDeclined = canApprove
+    ? leaveRequests.filter(
+        (r) =>
+          r.status === "ABGELEHNT_VERTRETUNG" &&
+          (principal?.role === "admin" ||
+            (r.userDeptIds ?? "").split(",").some((d) => principal!.departmentIds.includes(d)))
+      )
+    : [];
+
+  // Eligible substitutes for a given request owner (shares a department with the owner).
+  const eligibleForOwner = (ownerId: string, ownerDeptIds: string) => {
+    const deptIds = (ownerDeptIds ?? "").split(",");
+    return users
+      .filter((u) => u.id !== ownerId && u.departmentIds.some((d) => deptIds.includes(d)))
+      .map((u) => ({ id: u.id, name: u.name }));
+  };
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-6">
       <div className="grid gap-8 md:grid-cols-3">
@@ -151,6 +169,48 @@ export default async function UrlaubePage() {
                     users={users}
                     checkConflicts={checkConflicts}
                   />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Abgelehnte Vertretungen (Für den Chef): neue Vertretung zuweisen oder löschen */}
+          {canApprove && visibleDeclined.length > 0 && (
+            <div className="rounded-xl border-2 border-rose-200 bg-rose-50/30 p-6 shadow-sm dark:border-rose-900/30 dark:bg-rose-950/10">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-rose-800 dark:text-rose-400">Abgelehnte Vertretungen</h2>
+                  <p className="text-xs text-rose-600/80">Die Vertretung hat abgelehnt — neue Vertretung zuweisen oder Antrag löschen.</p>
+                </div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-100 text-sm font-bold text-rose-700 dark:bg-rose-900/50 dark:text-rose-400">
+                  {visibleDeclined.length}
+                </div>
+              </div>
+              <div className="space-y-3">
+                {visibleDeclined.map((request) => (
+                  <div key={request.id} className="space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {request.userName || "Unbekannt"}
+                        <span className="ml-2 text-xs font-normal text-zinc-500">{request.userDepartment || "Keine Angabe"}</span>
+                      </span>
+                      <form action={handleDeleteLeave}>
+                        <input type="hidden" name="id" value={request.id} />
+                        <button
+                          type="submit"
+                          className="text-[11px] font-semibold text-zinc-400 hover:text-red-500 transition-colors"
+                          title="Antrag löschen"
+                        >
+                          Löschen
+                        </button>
+                      </form>
+                    </div>
+                    <ResubmitLeave
+                      request={request}
+                      eligibleSubstitutes={eligibleForOwner(request.userId, request.userDeptIds ?? "")}
+                      onResubmit={handleResubmitLeave}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
