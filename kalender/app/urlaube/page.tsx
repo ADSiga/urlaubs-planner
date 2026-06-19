@@ -1,7 +1,9 @@
 import EditableLeave from "../EditableLeave";
 import LeaveForm from "./LeaveForm";
+import SubstituteRequest from "../SubstituteRequest";
+import ResubmitLeave from "../ResubmitLeave";
 // Alle Actions sauber von außen importieren
-import { checkConflicts, handleCreateLeave, handleUpdateLeave, handleDeleteLeave, handleApproveLeave, getUserBalance, calculateWorkingDays } from "./actions";
+import { checkConflicts, handleCreateLeave, handleUpdateLeave, handleDeleteLeave, handleApproveLeave, handleSubstituteAccept, handleSubstituteDecline, handleResubmitLeave, getUserBalance, calculateWorkingDays } from "./actions";
 import { queryDatabase } from "@/lib/db";
 import { getPrincipal } from "@/lib/auth";
 
@@ -57,6 +59,32 @@ export default async function UrlaubePage() {
         )
       : pendingRequests;
 
+  const myId = principal?.id ?? null;
+
+  // Requests where I am the nominated substitute and acceptance is pending.
+  const substituteRequests = leaveRequests.filter(
+    (r) => r.substituteId === myId && r.status === "WARTE_VERTRETUNG"
+  );
+
+  // My own requests, newest-relevant statuses first for visibility.
+  const myRequests =
+    principal?.role === "member"
+      ? leaveRequests.filter((r) => r.userId === myId)
+      : [];
+
+  const myDeclined = myRequests.filter((r) => r.status === "ABGELEHNT_VERTRETUNG");
+  const myPendingOwn = myRequests.filter(
+    (r) => r.status === "WARTE_VERTRETUNG" || r.status === "PENDING"
+  );
+
+  // Eligible substitutes for re-pick: users sharing a department with me, excluding me.
+  const me = users.find((u) => u.id === myId);
+  const eligibleSubstitutes = me
+    ? users
+        .filter((u) => u.id !== me.id && u.departmentIds.some((d) => me.departmentIds.includes(d)))
+        .map((u) => ({ id: u.id, name: u.name }))
+    : [];
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-6">
       <div className="grid gap-8 md:grid-cols-3">
@@ -66,6 +94,7 @@ export default async function UrlaubePage() {
           <LeaveForm
             users={users}
             currentMemberId={principal?.role === "member" ? principal.id : null}
+            isStaff={canApprove}
             onCreateLeave={handleCreateLeave}
             checkConflicts={checkConflicts}
             getUserBalance={getUserBalance}
@@ -75,6 +104,57 @@ export default async function UrlaubePage() {
 
         {/* Listen-Bereich */}
         <div className="md:col-span-2 space-y-8">
+
+          {/* Vertretungs-Anfragen: Anträge, bei denen ich die Vertretung bin */}
+          {substituteRequests.length > 0 && (
+            <div className="rounded-xl border-2 border-sky-200 bg-sky-50/30 p-6 shadow-sm dark:border-sky-900/30 dark:bg-sky-950/10">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-sky-800 dark:text-sky-400">Vertretungs-Anfragen</h2>
+                  <p className="text-xs text-sky-600/80">Diese Anträge warten auf deine Zustimmung als Vertretung.</p>
+                </div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700 dark:bg-sky-900/50 dark:text-sky-400">
+                  {substituteRequests.length}
+                </div>
+              </div>
+              <div className="space-y-3">
+                {substituteRequests.map((request) => (
+                  <SubstituteRequest
+                    key={request.id}
+                    request={request}
+                    onAccept={handleSubstituteAccept}
+                    onDecline={handleSubstituteDecline}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Meine Anträge: eigene offene und abgelehnte Anträge */}
+          {principal?.role === "member" && (myDeclined.length > 0 || myPendingOwn.length > 0) && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <h2 className="text-lg font-bold tracking-tight mb-1 text-zinc-900 dark:text-zinc-100">Meine Anträge</h2>
+              <p className="text-sm text-zinc-500 mb-6">Status deiner offenen Urlaubsanträge.</p>
+              <div className="space-y-3">
+                {myDeclined.map((request) => (
+                  <ResubmitLeave
+                    key={request.id}
+                    request={request}
+                    eligibleSubstitutes={eligibleSubstitutes}
+                    onResubmit={handleResubmitLeave}
+                  />
+                ))}
+                {myPendingOwn.map((request) => (
+                  <EditableLeave
+                    key={request.id}
+                    request={request}
+                    users={users}
+                    checkConflicts={checkConflicts}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 1. SEKTION: Offene Genehmigungen (Für den Chef) */}
           {canApprove && visiblePending.length > 0 && (
