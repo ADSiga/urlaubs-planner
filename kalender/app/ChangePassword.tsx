@@ -6,9 +6,11 @@ interface ChangePasswordProps {
   onChangePassword: (
     currentPassword: string,
     newPassword: string
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
+// Kept as a local literal on purpose: lib/password.ts imports node:crypto,
+// so importing MIN_PASSWORD_LENGTH from it would pull crypto into this client bundle.
 const MIN_LEN = 8;
 
 export default function ChangePassword({ onChangePassword }: ChangePasswordProps) {

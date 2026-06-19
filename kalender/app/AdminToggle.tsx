@@ -12,7 +12,7 @@ interface LoginMenuProps {
   onChangePassword?: (
     currentPassword: string,
     newPassword: string
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 const ROLE_LABELS: Record<string, string> = {
