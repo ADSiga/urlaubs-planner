@@ -21,6 +21,7 @@ model User {
   prevYearDays Int?             @default(0)
   leaves       LeaveRequest[]
   departments  UserDepartment[]
+  resetTokens  PasswordResetToken[]
 }
 
 model Department {
@@ -54,6 +55,18 @@ model LeaveRequest {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

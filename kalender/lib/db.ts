@@ -44,6 +44,20 @@ export async function initDb(): Promise<void> {
   await runDatabase(
     `CREATE TABLE IF NOT EXISTS BossDepartment (bossId TEXT NOT NULL, departmentId TEXT NOT NULL, PRIMARY KEY (bossId, departmentId))`
   );
+  await runDatabase(
+    `CREATE TABLE IF NOT EXISTS PasswordResetToken (
+       id TEXT PRIMARY KEY,
+       userId TEXT NOT NULL,
+       tokenHash TEXT NOT NULL UNIQUE,
+       expiresAt TEXT NOT NULL,
+       usedAt TEXT,
+       createdAt TEXT NOT NULL,
+       FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+     )`
+  );
+  await runDatabase(
+    `CREATE INDEX IF NOT EXISTS idx_prt_userId ON PasswordResetToken(userId)`
+  );
   const cols = await queryDatabase<{ name: string }>(`PRAGMA table_info(User)`);
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("email")) await runDatabase(`ALTER TABLE User ADD COLUMN email TEXT`);
