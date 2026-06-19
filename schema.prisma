@@ -48,6 +48,8 @@ model LeaveRequest {
   endDate      DateTime
   leaveType    String
   leaveDetails String?  @default("")
+  // Allowed values: WARTE_VERTRETUNG, ABGELEHNT_VERTRETUNG, PENDING, GENEHMIGT
+  // (written explicitly by app code; the lowercase default below is never used)
   status       String   @default("pending")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
