@@ -6,7 +6,7 @@ import sqlite3 from "sqlite3";
 import { initDb } from "@/lib/db";
 import { getPrincipal } from "@/lib/auth";
 import AdminToggle from "./AdminToggle";
-import { handleStaffLogin, handleMemberLogin, handleLogout } from "./actions_auth";
+import { handleStaffLogin, handleMemberLogin, handleLogout, handleChangePassword } from "./actions_auth";
 
 export const metadata: Metadata = {
   title: "Urlaubs-Planer",
@@ -103,6 +103,7 @@ export default async function RootLayout({
                 onStaffLogin={handleStaffLogin}
                 onMemberLogin={handleMemberLogin}
                 onLogout={handleLogout}
+                onChangePassword={handleChangePassword}
               />
               <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest text-zinc-300 dark:text-zinc-600 border-l border-zinc-100 dark:border-zinc-800 pl-4">
                 v2.1

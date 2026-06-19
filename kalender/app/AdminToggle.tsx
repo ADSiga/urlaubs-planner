@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ChangePassword from "./ChangePassword";
 
 interface LoginMenuProps {
   principalName: string | null;
@@ -8,6 +9,10 @@ interface LoginMenuProps {
   onStaffLogin: (code: string) => Promise<boolean>;
   onMemberLogin: (email: string, password: string) => Promise<boolean>;
   onLogout: () => Promise<void>;
+  onChangePassword?: (
+    currentPassword: string,
+    newPassword: string
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -22,6 +27,7 @@ export default function AdminToggle({
   onStaffLogin,
   onMemberLogin,
   onLogout,
+  onChangePassword,
 }: LoginMenuProps) {
   const [showModal, setShowModal] = useState(false);
   const [tab, setTab] = useState<"member" | "staff">("member");
@@ -88,6 +94,9 @@ export default function AdminToggle({
   if (principalRole) {
     return (
       <div className="flex items-center gap-2">
+        {principalRole === "member" && onChangePassword && (
+          <ChangePassword onChangePassword={onChangePassword} />
+        )}
         <div className="flex flex-col items-end">
           <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-tighter leading-none">
             {principalName}
