@@ -8,13 +8,14 @@ interface ConflictUser { userName: string; userId: string; startDate: string; en
 interface LeaveFormProps {
   users: DbUser[];
   currentMemberId: string | null;
+  isStaff?: boolean;
   onCreateLeave: (formData: FormData) => Promise<void>;
   checkConflicts: (userId: string, startDate: string, endDate: string) => Promise<ConflictUser[]>;
   getUserBalance: (userId: string) => Promise<{ total: number; used: number; remaining: number }>;
   calculateWorkingDays: (startDate: string, endDate: string) => Promise<number>;
 }
 
-export default function LeaveForm({ users, currentMemberId, onCreateLeave, checkConflicts, getUserBalance, calculateWorkingDays }: LeaveFormProps) {
+export default function LeaveForm({ users, currentMemberId, isStaff, onCreateLeave, checkConflicts, getUserBalance, calculateWorkingDays }: LeaveFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [conflicts, setConflicts] = useState<ConflictUser[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -245,6 +246,17 @@ export default function LeaveForm({ users, currentMemberId, onCreateLeave, check
             <option value="Sonderurlaub">Sonderurlaub</option>
           </select>
         </div>
+
+        {isStaff && (
+          <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 px-1">
+            <input
+              type="checkbox"
+              name="requireSubstitute"
+              className="h-3.5 w-3.5 rounded border-zinc-300 dark:border-zinc-700"
+            />
+            Vertretung muss zustimmen
+          </label>
+        )}
 
         {leaveType === "Sonderurlaub" && (
           <div>
