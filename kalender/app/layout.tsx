@@ -18,13 +18,31 @@ async function getPendingCount(): Promise<number> {
   const dbPath = path.resolve(process.cwd(), "../dev.db");
   const sqlite = sqlite3.verbose();
   const db = new sqlite.Database(dbPath, sqlite.OPEN_READONLY);
-  
+
   return new Promise((resolve) => {
     db.get("SELECT COUNT(*) as count FROM LeaveRequest WHERE status = 'PENDING'", [], (err, row: any) => {
       db.close();
       if (err) resolve(0);
       else resolve(row?.count || 0);
     });
+  });
+}
+
+async function getSubstituteCount(memberId: string): Promise<number> {
+  const dbPath = path.resolve(process.cwd(), "../dev.db");
+  const sqlite = sqlite3.verbose();
+  const db = new sqlite.Database(dbPath, sqlite.OPEN_READONLY);
+
+  return new Promise((resolve) => {
+    db.get(
+      "SELECT COUNT(*) as count FROM LeaveRequest WHERE status = 'WARTE_VERTRETUNG' AND substituteId = ?",
+      [memberId],
+      (err, row: any) => {
+        db.close();
+        if (err) resolve(0);
+        else resolve(row?.count || 0);
+      }
+    );
   });
 }
 
@@ -36,6 +54,8 @@ export default async function RootLayout({
   await initDb();
   const pendingCount = await getPendingCount();
   const principal = await getPrincipal();
+  const substituteCount =
+    principal?.role === "member" ? await getSubstituteCount(principal.id) : 0;
   const bossActive = principal?.role === "admin" || principal?.role === "boss";
 
   return (
@@ -64,6 +84,11 @@ export default async function RootLayout({
                   {bossActive && pendingCount > 0 && (
                     <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white shadow-sm">
                       {pendingCount}
+                    </span>
+                  )}
+                  {substituteCount > 0 && (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white shadow-sm">
+                      {substituteCount}
                     </span>
                   )}
                 </Link>
