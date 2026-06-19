@@ -1,7 +1,7 @@
 import { verify, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
 import { cookies } from "next/headers";
-import { queryDatabase } from "./db";
-import { verifyPassword } from "./password";
+import { queryDatabase, runDatabase } from "./db";
+import { verifyPassword, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
 import { signSession, verifySession, type Principal } from "./session-crypto";
 import {
   isAdminPrincipal,
@@ -131,4 +131,41 @@ export async function canManageMember(userId: string): Promise<boolean> {
   if (!p) return false;
   if (p.role === "admin") return true;
   return canManageMemberScope(p, await deptIdsForUser(userId));
+}
+
+export type ChangePasswordResult = { ok: true } | { ok: false; error: string };
+
+export async function changeMemberPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<ChangePasswordResult> {
+  const principal = await getPrincipal();
+  if (!principal || principal.role !== "member") {
+    return { ok: false, error: "Nicht berechtigt." };
+  }
+
+  const valid = validateNewPassword(currentPassword, newPassword);
+  if (!valid.ok) {
+    const messages: Record<string, string> = {
+      empty: "Bitte beide Felder ausfüllen.",
+      too_short: `Das neue Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`,
+      same_as_current: "Das neue Passwort muss sich vom aktuellen unterscheiden.",
+    };
+    return { ok: false, error: messages[valid.error] };
+  }
+
+  const rows = await queryDatabase<{ passwordHash: string | null }>(
+    "SELECT passwordHash FROM User WHERE id = ?",
+    [principal.id]
+  );
+  const hash = rows[0]?.passwordHash;
+  if (!hash || !verifyPassword(currentPassword, hash)) {
+    return { ok: false, error: "Aktuelles Passwort ist falsch." };
+  }
+
+  await runDatabase("UPDATE User SET passwordHash = ? WHERE id = ?", [
+    hashPassword(newPassword),
+    principal.id,
+  ]);
+  return { ok: true };
 }

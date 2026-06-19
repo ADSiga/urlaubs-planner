@@ -1,6 +1,6 @@
 "use server";
 
-import { loginStaff, loginMember, logout } from "@/lib/auth";
+import { loginStaff, loginMember, logout, changeMemberPassword, type ChangePasswordResult } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
 export async function handleStaffLogin(code: string): Promise<boolean> {
@@ -18,4 +18,11 @@ export async function handleMemberLogin(email: string, password: string): Promis
 export async function handleLogout() {
   await logout();
   revalidatePath("/", "layout");
+}
+
+export async function handleChangePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<ChangePasswordResult> {
+  return changeMemberPassword(currentPassword, newPassword);
 }
