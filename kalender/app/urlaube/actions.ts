@@ -2,8 +2,9 @@
 
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
-import { queryDatabase, runDatabase } from "@/lib/db";
+import { queryDatabase, runDatabase, getOne } from "@/lib/db";
 import { getPrincipal } from "@/lib/auth";
+import { computeInitialStatus, canSubstituteAct, canResubmit, type CreatorRole } from "@/lib/leave-workflow";
 
 async function canActOnLeave(leaveId: string): Promise<boolean> {
   const principal = await getPrincipal();
@@ -18,6 +19,26 @@ async function canActOnLeave(leaveId: string): Promise<boolean> {
     [leaveId]
   );
   return rows.some((r) => principal.departmentIds.includes(r.departmentId));
+}
+
+async function isSubstituteOf(leaveId: string): Promise<boolean> {
+  const principal = await getPrincipal();
+  if (!principal) return false;
+  const row = await getOne<{ substituteId: string | null }>(
+    "SELECT substituteId FROM LeaveRequest WHERE id = ?",
+    [leaveId]
+  );
+  return !!row && row.substituteId === principal.id;
+}
+
+async function isOwnerOf(leaveId: string): Promise<boolean> {
+  const principal = await getPrincipal();
+  if (!principal) return false;
+  const row = await getOne<{ userId: string }>(
+    "SELECT userId FROM LeaveRequest WHERE id = ?",
+    [leaveId]
+  );
+  return !!row && row.userId === principal.id;
 }
 
 // 1. ACTION: Konflikte prüfen (alle Abteilungen des Benutzers)
@@ -118,6 +139,7 @@ export async function handleCreateLeave(formData: FormData) {
   const endDate = formData.get("endDate") as string;
   const leaveType = formData.get("leaveType") as string || "Erholungsurlaub";
   const leaveDetails = formData.get("leaveDetails") as string || "";
+  const requireSubstitute = formData.get("requireSubstitute") === "on";
 
   if (!userId || !startDate || !endDate) return;
 
@@ -159,10 +181,18 @@ export async function handleCreateLeave(formData: FormData) {
   const newRequestId = randomUUID();
   const nowIsoString = new Date().toISOString();
 
+  const role: CreatorRole = principal?.role ?? "member";
+  const status = computeInitialStatus({
+    role,
+    leaveType,
+    requireSubstitute,
+    hasSubstitute: !!substituteId,
+  });
+
   await runDatabase(
     `INSERT INTO LeaveRequest (id, userId, substituteId, startDate, endDate, leaveType, leaveDetails, status, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`,
-    [newRequestId, userId, substituteId, startDate, endDate, leaveType, leaveDetails, nowIsoString, nowIsoString]
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [newRequestId, userId, substituteId, startDate, endDate, leaveType, leaveDetails, status, nowIsoString, nowIsoString]
   );
   revalidatePath("/urlaube");
 }
@@ -219,4 +249,75 @@ export async function handleApproveLeave(formData: FormData) {
   revalidatePath("/urlaube");
   revalidatePath("/mitglieder");
   revalidatePath("/");
+}
+
+// 6. ACTION: Vertretung stimmt zu (WARTE_VERTRETUNG -> PENDING)
+export async function handleSubstituteAccept(formData: FormData) {
+  const id = formData.get("id") as string;
+  if (!id) return;
+  if (!(await isSubstituteOf(id))) {
+    console.error("Nur die zugewiesene Vertretung darf zustimmen!");
+    return;
+  }
+  const row = await getOne<{ status: string }>(
+    "SELECT status FROM LeaveRequest WHERE id = ?",
+    [id]
+  );
+  if (!row || !canSubstituteAct(row.status)) return;
+
+  await runDatabase(
+    `UPDATE LeaveRequest SET status = 'PENDING', updatedAt = ? WHERE id = ?`,
+    [new Date().toISOString(), id]
+  );
+  revalidatePath("/urlaube");
+}
+
+// 7. ACTION: Vertretung lehnt ab (WARTE_VERTRETUNG -> ABGELEHNT_VERTRETUNG)
+export async function handleSubstituteDecline(formData: FormData) {
+  const id = formData.get("id") as string;
+  if (!id) return;
+  if (!(await isSubstituteOf(id))) {
+    console.error("Nur die zugewiesene Vertretung darf ablehnen!");
+    return;
+  }
+  const row = await getOne<{ status: string }>(
+    "SELECT status FROM LeaveRequest WHERE id = ?",
+    [id]
+  );
+  if (!row || !canSubstituteAct(row.status)) return;
+
+  await runDatabase(
+    `UPDATE LeaveRequest SET status = 'ABGELEHNT_VERTRETUNG', updatedAt = ? WHERE id = ?`,
+    [new Date().toISOString(), id]
+  );
+  revalidatePath("/urlaube");
+}
+
+// 8. ACTION: Antragsteller wählt neue Vertretung und reicht erneut ein
+//    (ABGELEHNT_VERTRETUNG -> WARTE_VERTRETUNG)
+export async function handleResubmitLeave(formData: FormData) {
+  const id = formData.get("id") as string;
+  const substituteId = formData.get("substituteId") as string;
+  if (!id || !substituteId) return;
+  if (!(await isOwnerOf(id))) {
+    console.error("Nur der Antragsteller darf erneut einreichen!");
+    return;
+  }
+  const row = await getOne<{ status: string; userId: string; startDate: string; endDate: string }>(
+    "SELECT status, userId, startDate, endDate FROM LeaveRequest WHERE id = ?",
+    [id]
+  );
+  if (!row || !canResubmit(row.status)) return;
+
+  const conflicts = await checkConflicts(row.userId, row.startDate, row.endDate, id);
+  if (conflicts.length > 0) {
+    console.error("Sicherheits-Check: Überschneidung beim erneuten Einreichen.");
+    return;
+  }
+
+  await runDatabase(
+    `UPDATE LeaveRequest SET substituteId = ?, status = 'WARTE_VERTRETUNG', updatedAt = ? WHERE id = ?`,
+    [substituteId, new Date().toISOString(), id]
+  );
+  revalidatePath("/urlaube");
 }
