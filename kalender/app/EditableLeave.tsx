@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { STATUS_LABELS } from "@/lib/leave-workflow";
 
 interface ConflictUser {
   userName: string;
@@ -216,6 +217,13 @@ export default function EditableLeave({ request, users = [], onUpdate, onDelete,
     );
   }
 
+  const statusClasses: Record<string, string> = {
+    WARTE_VERTRETUNG: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-800",
+    ABGELEHNT_VERTRETUNG: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800",
+    PENDING: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800",
+    GENEHMIGT: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800",
+  };
+
   return (
     <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/50 hover:shadow-sm transition-shadow">
       <div>
@@ -231,11 +239,9 @@ export default function EditableLeave({ request, users = [], onUpdate, onDelete,
       <div className="flex flex-col items-end gap-2">
         <div className="flex gap-2">
             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${
-            request.status === 'PENDING' 
-                ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800" 
-                : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800"
+              statusClasses[request.status] ?? statusClasses.GENEHMIGT
             }`}>
-            {request.status === 'PENDING' ? 'Ausstehend' : 'Genehmigt'}
+              {STATUS_LABELS[request.status] ?? request.status}
             </span>
             <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
             {request.leaveType}
