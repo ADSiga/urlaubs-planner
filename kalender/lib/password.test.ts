@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
+import { hashPassword, verifyPassword, validateNewPassword, validateResetPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
 
 test("hashPassword round-trips and rejects wrong password", () => {
   const hash = hashPassword("Sommer2026!");
@@ -37,4 +37,16 @@ test("validateNewPassword: rejects new equal to current", () => {
 test("validateNewPassword: accepts a valid distinct new password >= 8 chars", () => {
   assert.deepEqual(validateNewPassword("current12", "brandnew34"), { ok: true });
   assert.deepEqual(validateNewPassword("current12", "a".repeat(MIN_PASSWORD_LENGTH)), { ok: true });
+});
+
+test("validateResetPassword: rejects empty", () => {
+  assert.deepEqual(validateResetPassword(""), { ok: false, error: "empty" });
+});
+
+test("validateResetPassword: rejects too short", () => {
+  assert.deepEqual(validateResetPassword("short"), { ok: false, error: "too_short" });
+});
+
+test("validateResetPassword: accepts >= 8 chars", () => {
+  assert.deepEqual(validateResetPassword("longenough1"), { ok: true });
 });

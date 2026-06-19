@@ -31,3 +31,11 @@ export function validateNewPassword(
   if (newPassword === currentPassword) return { ok: false, error: "same_as_current" };
   return { ok: true };
 }
+
+export function validateResetPassword(
+  newPassword: string
+): { ok: true } | { ok: false; error: "empty" | "too_short" } {
+  if (!newPassword) return { ok: false, error: "empty" };
+  if (newPassword.length < MIN_PASSWORD_LENGTH) return { ok: false, error: "too_short" };
+  return { ok: true };
+}
