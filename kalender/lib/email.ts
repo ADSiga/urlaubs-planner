@@ -11,14 +11,16 @@ export function buildResetEmail(resetUrl: string): { subject: string; text: stri
   };
 }
 
+// Reads the project's existing mail credentials: MAIL_SERVER (host),
+// MAIL_USERNAME (auth user + From), MAIL_PASSWORD. Port 587 with STARTTLS.
 function transport() {
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: Number(process.env.SMTP_PORT ?? 587) === 465,
+    host: process.env.MAIL_SERVER,
+    port: 587,
+    secure: false, // STARTTLS upgrade on 587
     auth:
-      process.env.SMTP_USER && process.env.SMTP_PASS
-        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+      process.env.MAIL_USERNAME && process.env.MAIL_PASSWORD
+        ? { user: process.env.MAIL_USERNAME, pass: process.env.MAIL_PASSWORD }
         : undefined,
   });
 }
@@ -26,7 +28,7 @@ function transport() {
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
   const { subject, text } = buildResetEmail(resetUrl);
   await transport().sendMail({
-    from: process.env.SMTP_FROM ?? "no-reply@urlaubsplaner.local",
+    from: process.env.MAIL_USERNAME ?? "no-reply@urlaubsplaner.local",
     to,
     subject,
     text,
