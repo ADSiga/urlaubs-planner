@@ -1,6 +1,7 @@
 "use server";
 
 import { loginStaff, loginMember, logout, changeMemberPassword, type ChangePasswordResult } from "@/lib/auth";
+import { requestPasswordReset, performPasswordReset } from "@/lib/password-reset";
 import { revalidatePath } from "next/cache";
 
 export async function handleStaffLogin(code: string): Promise<boolean> {
@@ -25,4 +26,16 @@ export async function handleChangePassword(
   newPassword: string
 ): Promise<ChangePasswordResult> {
   return changeMemberPassword(currentPassword, newPassword);
+}
+
+export async function handleRequestPasswordReset(email: string): Promise<{ ok: true }> {
+  await requestPasswordReset(email);
+  return { ok: true }; // anti-enumeration: always the same response
+}
+
+export async function handlePerformPasswordReset(
+  token: string,
+  newPassword: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return performPasswordReset(token, newPassword);
 }
