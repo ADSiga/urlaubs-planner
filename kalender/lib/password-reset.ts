@@ -70,8 +70,9 @@ export async function performPasswordReset(
   }
 
   const nowIso = new Date().toISOString();
-  await runDatabase("UPDATE User SET passwordHash = ? WHERE id = ?", [
+  await runDatabase("UPDATE User SET passwordHash = ?, passwordChangedAt = ? WHERE id = ?", [
     hashPassword(newPassword),
+    nowIso,
     row.userId,
   ]);
   // Consume this token and invalidate any other outstanding tokens for the user.

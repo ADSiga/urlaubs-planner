@@ -21,7 +21,7 @@ async function resetSchema() {
   await runDatabase("DROP TABLE IF EXISTS PasswordResetToken");
   await runDatabase("DROP TABLE IF EXISTS User");
   await runDatabase(
-    `CREATE TABLE User (id TEXT PRIMARY KEY, name TEXT, email TEXT, passwordHash TEXT)`
+    `CREATE TABLE User (id TEXT PRIMARY KEY, name TEXT, email TEXT, passwordHash TEXT, passwordChangedAt TEXT)`
   );
   await runDatabase(
     `CREATE TABLE PasswordResetToken (id TEXT PRIMARY KEY, userId TEXT NOT NULL, tokenHash TEXT NOT NULL UNIQUE, expiresAt TEXT NOT NULL, usedAt TEXT, createdAt TEXT NOT NULL)`
@@ -75,6 +75,11 @@ test("performPasswordReset: happy path updates hash and consumes the token", asy
   const { raw } = (await createResetTokenForEmail("tester@example.com"))!;
   const res = await performPasswordReset(raw, "brandnewpass1");
   assert.deepEqual(res, { ok: true });
+  const after = (await queryDatabase<{ passwordChangedAt: string | null }>(
+    "SELECT passwordChangedAt FROM User WHERE id = ?",
+    [MEMBER_ID]
+  ))[0];
+  assert.ok(after.passwordChangedAt, "passwordChangedAt should be set after reset");
 
   const user = (await queryDatabase<{ passwordHash: string }>(
     "SELECT passwordHash FROM User WHERE id = ?",
