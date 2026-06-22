@@ -62,6 +62,7 @@ export async function initDb(): Promise<void> {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("email")) await runDatabase(`ALTER TABLE User ADD COLUMN email TEXT`);
   if (!names.has("passwordHash")) await runDatabase(`ALTER TABLE User ADD COLUMN passwordHash TEXT`);
+  if (!names.has("passwordChangedAt")) await runDatabase(`ALTER TABLE User ADD COLUMN passwordChangedAt TEXT`);
   // SQLite treats NULLs as distinct, so multiple members without email stay valid.
   await runDatabase(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON User(email)`);
 }
