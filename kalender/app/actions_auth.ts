@@ -1,19 +1,26 @@
 "use server";
 
-import { loginStaff, loginMember, logout, changeMemberPassword, type ChangePasswordResult } from "@/lib/auth";
+import { loginStaff, loginMember, logout, changeMemberPassword, type ChangePasswordResult, type LoginResult } from "@/lib/auth";
 import { requestPasswordReset, performPasswordReset } from "@/lib/password-reset";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
-export async function handleStaffLogin(code: string): Promise<boolean> {
-  const ok = await loginStaff(code);
-  if (ok) revalidatePath("/", "layout");
-  return ok;
+async function clientIp(): Promise<string | null> {
+  const xff = (await headers()).get("x-forwarded-for");
+  if (!xff) return null;
+  return xff.split(",")[0].trim() || null;
 }
 
-export async function handleMemberLogin(email: string, password: string): Promise<boolean> {
-  const ok = await loginMember(email, password);
-  if (ok) revalidatePath("/", "layout");
-  return ok;
+export async function handleStaffLogin(code: string): Promise<LoginResult> {
+  const res = await loginStaff(code, await clientIp());
+  if (res.ok) revalidatePath("/", "layout");
+  return res;
+}
+
+export async function handleMemberLogin(email: string, password: string): Promise<LoginResult> {
+  const res = await loginMember(email, password);
+  if (res.ok) revalidatePath("/", "layout");
+  return res;
 }
 
 export async function handleLogout() {

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { queryDatabase, runDatabase, getOne } from "./db";
 import { verifyPassword, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
 import { signSession, verifySession, sessionPredatesPasswordChange, SESSION_TTL_MS, type Principal } from "./session-crypto";
+import { isLocked, recordFailure, clearFailures } from "./login-throttle";
 import {
   isAdminPrincipal,
   canManageDepartmentScope,
@@ -12,6 +13,8 @@ import {
 export type { Principal };
 
 const SESSION_COOKIE = "session";
+
+export type LoginResult = { ok: true } | { ok: false; reason: "invalid" | "locked" };
 
 function sessionSecret(): string {
   const s = process.env.SESSION_SECRET;
@@ -79,44 +82,56 @@ export async function getPrincipal(): Promise<Principal | null> {
   return session.principal;
 }
 
-export async function loginStaff(code: string): Promise<boolean> {
+export async function loginStaff(code: string, ip?: string | null): Promise<LoginResult> {
+  const key = ip ? `ip:${ip}` : null;
+  if (key && (await isLocked(key))) return { ok: false, reason: "locked" };
+
   const adminSecret = process.env.BOSS_SECRET;
   if (adminSecret && (await verifyTotp(code, adminSecret))) {
+    if (key) await clearFailures(key);
     await setSession({ role: "admin", id: "admin", name: "Admin", departmentIds: [] });
-    return true;
+    return { ok: true };
   }
   const bosses = await queryDatabase<{ id: string; name: string; totpSecret: string }>(
     "SELECT id, name, totpSecret FROM Boss"
   );
   for (const b of bosses) {
     if (await verifyTotp(code, b.totpSecret)) {
+      if (key) await clearFailures(key);
       await setSession({
         role: "boss",
         id: b.id,
         name: b.name,
         departmentIds: await deptIdsForBoss(b.id),
       });
-      return true;
+      return { ok: true };
     }
   }
-  return false;
+  if (key) await recordFailure(key);
+  return { ok: false, reason: "invalid" };
 }
 
-export async function loginMember(email: string, password: string): Promise<boolean> {
+export async function loginMember(email: string, password: string): Promise<LoginResult> {
+  const key = `email:${email.toLowerCase()}`;
+  if (await isLocked(key)) return { ok: false, reason: "locked" };
+
   const rows = await queryDatabase<{ id: string; name: string; passwordHash: string | null }>(
     "SELECT id, name, passwordHash FROM User WHERE email = ?",
     [email]
   );
   const user = rows[0];
-  if (!user || !user.passwordHash) return false;
-  if (!verifyPassword(password, user.passwordHash)) return false;
+  if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+    await recordFailure(key);
+    return { ok: false, reason: "invalid" };
+  }
+  await clearFailures(key);
   await setSession({
     role: "member",
     id: user.id,
     name: user.name,
     departmentIds: await deptIdsForUser(user.id),
   });
-  return true;
+  return { ok: true };
 }
 
 export async function logout(): Promise<void> {

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import ChangePassword from "./ChangePassword";
+import type { LoginResult } from "@/lib/auth";
 
 interface LoginMenuProps {
   principalName: string | null;
   principalRole: "admin" | "boss" | "member" | null;
-  onStaffLogin: (code: string) => Promise<boolean>;
-  onMemberLogin: (email: string, password: string) => Promise<boolean>;
+  onStaffLogin: (code: string) => Promise<LoginResult>;
+  onMemberLogin: (email: string, password: string) => Promise<LoginResult>;
   onLogout: () => Promise<void>;
   onChangePassword?: (
     currentPassword: string,
@@ -39,7 +40,8 @@ export default function AdminToggle({
   // Staff tab state
   const [code, setCode] = useState("");
 
-  const [error, setError] = useState(false);
+  const [errorKind, setErrorKind] = useState<"invalid" | "locked" | null>(null);
+  const error = errorKind !== null;
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleLogout = async () => {
@@ -50,15 +52,15 @@ export default function AdminToggle({
   const handleMemberSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
-    const success = await onMemberLogin(email, password);
-    if (success) {
+    const res = await onMemberLogin(email, password);
+    if (res.ok) {
       setShowModal(false);
       setEmail("");
       setPassword("");
-      setError(false);
+      setErrorKind(null);
       window.location.reload();
     } else {
-      setError(true);
+      setErrorKind(res.reason);
       setIsLoggingIn(false);
     }
   };
@@ -66,26 +68,26 @@ export default function AdminToggle({
   const handleStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
-    const success = await onStaffLogin(code);
-    if (success) {
+    const res = await onStaffLogin(code);
+    if (res.ok) {
       setShowModal(false);
       setCode("");
-      setError(false);
+      setErrorKind(null);
       window.location.reload();
     } else {
-      setError(true);
+      setErrorKind(res.reason);
       setIsLoggingIn(false);
     }
   };
 
   const handleTabChange = (newTab: "member" | "staff") => {
     setTab(newTab);
-    setError(false);
+    setErrorKind(null);
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
-    setError(false);
+    setErrorKind(null);
     setEmail("");
     setPassword("");
     setCode("");
@@ -202,7 +204,7 @@ export default function AdminToggle({
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
                     </svg>
-                    Zugriff verweigert
+                    {errorKind === "locked" ? "Zu viele Versuche. Bitte später erneut versuchen." : "Zugriff verweigert"}
                   </div>
                 )}
 
@@ -245,7 +247,7 @@ export default function AdminToggle({
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
                     </svg>
-                    Zugriff verweigert
+                    {errorKind === "locked" ? "Zu viele Versuche. Bitte später erneut versuchen." : "Zugriff verweigert"}
                   </div>
                 )}
 
