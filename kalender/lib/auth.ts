@@ -1,8 +1,8 @@
 import { verify, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
 import { cookies } from "next/headers";
-import { queryDatabase, runDatabase } from "./db";
+import { queryDatabase, runDatabase, getOne } from "./db";
 import { verifyPassword, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
-import { signSession, verifySession, type Principal } from "./session-crypto";
+import { signSession, verifySession, sessionPredatesPasswordChange, type Principal } from "./session-crypto";
 import {
   isAdminPrincipal,
   canManageDepartmentScope,
@@ -65,7 +65,18 @@ export async function getPrincipal(): Promise<Principal | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  return verifySession(token, sessionSecret());
+  const session = verifySession(token, sessionSecret());
+  if (!session) return null;
+  if (session.principal.role === "member") {
+    const row = await getOne<{ passwordChangedAt: string | null }>(
+      "SELECT passwordChangedAt FROM User WHERE id = ?",
+      [session.principal.id]
+    );
+    if (sessionPredatesPasswordChange(session.iat, row?.passwordChangedAt ?? null)) {
+      return null;
+    }
+  }
+  return session.principal;
 }
 
 export async function loginStaff(code: string): Promise<boolean> {
@@ -163,9 +174,14 @@ export async function changeMemberPassword(
     return { ok: false, error: "Aktuelles Passwort ist falsch." };
   }
 
-  await runDatabase("UPDATE User SET passwordHash = ? WHERE id = ?", [
+  const now = new Date().toISOString();
+  await runDatabase("UPDATE User SET passwordHash = ?, passwordChangedAt = ? WHERE id = ?", [
     hashPassword(newPassword),
+    now,
     principal.id,
   ]);
+  // Re-issue THIS session with a fresh iat (>= passwordChangedAt) so the current
+  // tab stays logged in while the member's other sessions are invalidated.
+  await setSession(principal);
   return { ok: true };
 }
