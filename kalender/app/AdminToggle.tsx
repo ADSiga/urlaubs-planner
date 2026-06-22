@@ -188,6 +188,15 @@ export default function AdminToggle({
                   />
                 </div>
 
+                <div className="text-right">
+                  <a
+                    href="/reset"
+                    className="text-[11px] font-medium text-emerald-600 hover:text-emerald-500"
+                  >
+                    Passwort vergessen?
+                  </a>
+                </div>
+
                 {error && (
                   <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-red-500 uppercase animate-shake">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
