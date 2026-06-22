@@ -2,7 +2,7 @@ import { verify, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
 import { cookies } from "next/headers";
 import { queryDatabase, runDatabase, getOne } from "./db";
 import { verifyPassword, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
-import { signSession, verifySession, sessionPredatesPasswordChange, type Principal } from "./session-crypto";
+import { signSession, verifySession, sessionPredatesPasswordChange, SESSION_TTL_MS, type Principal } from "./session-crypto";
 import {
   isAdminPrincipal,
   canManageDepartmentScope,
@@ -56,7 +56,7 @@ async function setSession(principal: Principal): Promise<void> {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24,
+    maxAge: SESSION_TTL_MS / 1000, // keep the cookie lifetime in lockstep with the signed exp
     path: "/",
   });
 }
