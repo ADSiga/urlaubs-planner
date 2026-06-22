@@ -58,6 +58,16 @@ export async function initDb(): Promise<void> {
   await runDatabase(
     `CREATE INDEX IF NOT EXISTS idx_prt_userId ON PasswordResetToken(userId)`
   );
+  await runDatabase(
+    `CREATE TABLE IF NOT EXISTS LoginAttempt (
+       id TEXT PRIMARY KEY,
+       attemptKey TEXT NOT NULL,
+       createdAt TEXT NOT NULL
+     )`
+  );
+  await runDatabase(
+    `CREATE INDEX IF NOT EXISTS idx_login_attempt_key ON LoginAttempt(attemptKey, createdAt)`
+  );
   const cols = await queryDatabase<{ name: string }>(`PRAGMA table_info(User)`);
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("email")) await runDatabase(`ALTER TABLE User ADD COLUMN email TEXT`);

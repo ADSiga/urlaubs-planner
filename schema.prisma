@@ -72,6 +72,14 @@ model PasswordResetToken {
   @@index([userId])
 }
 
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  attemptKey String
+  createdAt  DateTime @default(now())
+
+  @@index([attemptKey, createdAt])
+}
+
 model PublicHoliday {
   id   String   @id @default(cuid())
   date DateTime @unique
