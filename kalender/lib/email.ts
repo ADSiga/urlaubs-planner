@@ -18,6 +18,8 @@ function transport() {
     host: process.env.MAIL_SERVER,
     port: 587,
     secure: false, // STARTTLS upgrade on 587
+    requireTLS: true, // abort rather than send credentials in cleartext if STARTTLS is unavailable
+    tls: { minVersion: "TLSv1.2" },
     auth:
       process.env.MAIL_USERNAME && process.env.MAIL_PASSWORD
         ? { user: process.env.MAIL_USERNAME, pass: process.env.MAIL_PASSWORD }
