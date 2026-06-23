@@ -5,6 +5,10 @@ import { requestPasswordReset, performPasswordReset } from "@/lib/password-reset
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
+// Trust assumption: the first x-forwarded-for hop is the real client only if a trusted reverse
+// proxy SETS/OVERWRITES this header (does not merely append). If the app is reachable directly,
+// or the proxy appends, a client can spoof XFF to dodge the per-IP staff throttle or pre-lock a
+// victim IP. The staff IP throttle is best-effort; member (email-keyed) throttling does not rely on this.
 async function clientIp(): Promise<string | null> {
   const xff = (await headers()).get("x-forwarded-for");
   if (!xff) return null;

@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 export const MAX_FAILURES = 5;
 export const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
+// All createdAt values are stored as new Date(...).toISOString() (fixed-width UTC "Z"), so the
+// lexicographic string comparisons against an ISO cutoff below sort identically to chronological order.
 /** Locked when >= MAX_FAILURES failures recorded within the last WINDOW_MS. */
 export async function isLocked(key: string): Promise<boolean> {
   const cutoff = new Date(Date.now() - WINDOW_MS).toISOString();

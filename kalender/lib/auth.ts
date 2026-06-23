@@ -82,7 +82,13 @@ export async function getPrincipal(): Promise<Principal | null> {
   return session.principal;
 }
 
+// NOTE: the isLocked()-then-recordFailure() pattern below (and in loginMember) is not atomic —
+// each runs its own connection with no transaction. A concurrent burst for one key can pass the
+// lock check before any failure lands, allowing slightly more than MAX_FAILURES guesses per window.
+// Accepted for this human-facing 5-try lockout; a real fix would need transactional DB support.
 export async function loginStaff(code: string, ip?: string | null): Promise<LoginResult> {
+  // ip is null when no x-forwarded-for is present; staff is then not throttled (fail-open) rather
+  // than sharing one global bucket that any attacker could use to lock out all staff.
   const key = ip ? `ip:${ip}` : null;
   if (key && (await isLocked(key))) return { ok: false, reason: "locked" };
 
