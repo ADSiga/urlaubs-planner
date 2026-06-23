@@ -1,7 +1,8 @@
 import { queryDatabase, runDatabase, getOne } from "./db";
 import { hashPassword, validateResetPassword } from "./password";
 import { generateResetToken, hashResetToken } from "./reset-tokens";
-import { sendPasswordResetEmail } from "./email";
+import { sendPasswordResetEmail, isMailConfigured } from "./email";
+import { recordMailFailure } from "./mail-failure";
 import { randomUUID } from "crypto";
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -88,9 +89,22 @@ export async function requestPasswordReset(email: string): Promise<void> {
   try {
     const created = await createResetTokenForEmail(email);
     if (!created) return;
+    if (!isMailConfigured()) {
+      // A real account requested a reset but we cannot send: make it visible, don't fail silently.
+      console.warn(
+        "[password-reset] mail not configured (MAIL_SERVER/MAIL_USERNAME/MAIL_PASSWORD); reset email NOT sent"
+      );
+      await recordMailFailure(email, "config_missing");
+      return;
+    }
     const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
     await sendPasswordResetEmail(email, `${base}/reset/${created.raw}`);
   } catch (err) {
     console.error("[password-reset] send failed:", err);
+    try {
+      await recordMailFailure(email, "send_error", err);
+    } catch (recErr) {
+      console.error("[password-reset] failed to record mail failure:", recErr);
+    }
   }
 }

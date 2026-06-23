@@ -11,6 +11,13 @@ export function buildResetEmail(resetUrl: string): { subject: string; text: stri
   };
 }
 
+/** True only when all three SMTP env vars are present; otherwise no email can be sent. */
+export function isMailConfigured(): boolean {
+  return Boolean(
+    process.env.MAIL_SERVER && process.env.MAIL_USERNAME && process.env.MAIL_PASSWORD
+  );
+}
+
 // Reads the project's existing mail credentials: MAIL_SERVER (host),
 // MAIL_USERNAME (auth user + From), MAIL_PASSWORD. Port 587 with STARTTLS.
 function transport() {

@@ -80,6 +80,14 @@ model LoginAttempt {
   @@index([attemptKey, createdAt])
 }
 
+model MailFailure {
+  id        String   @id @default(cuid())
+  recipient String
+  reason    String
+  error     String?
+  createdAt DateTime @default(now())
+}
+
 model PublicHoliday {
   id   String   @id @default(cuid())
   date DateTime @unique
