@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, verifyPassword, validateNewPassword, validateResetPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
+import { hashPassword, verifyPassword, verifyPasswordConstantTime, validateNewPassword, validateResetPassword, MIN_PASSWORD_LENGTH } from "./password.ts";
 
 test("hashPassword round-trips and rejects wrong password", () => {
   const hash = hashPassword("Sommer2026!");
@@ -17,6 +17,18 @@ test("verifyPassword rejects malformed stored values", () => {
 
 test("two hashes of same password differ (random salt)", () => {
   assert.notEqual(hashPassword("same"), hashPassword("same"));
+});
+
+test("verifyPasswordConstantTime matches a real hash and rejects a wrong one", () => {
+  const hash = hashPassword("Sommer2026!");
+  assert.equal(verifyPasswordConstantTime("Sommer2026!", hash), true);
+  assert.equal(verifyPasswordConstantTime("wrong", hash), false);
+});
+
+test("verifyPasswordConstantTime returns false (not a match) when no hash exists", () => {
+  // Both branches run a scrypt verification; the null/undefined cases must never succeed.
+  assert.equal(verifyPasswordConstantTime("anything", null), false);
+  assert.equal(verifyPasswordConstantTime("anything", undefined), false);
 });
 
 test("validateNewPassword: rejects empty fields", () => {

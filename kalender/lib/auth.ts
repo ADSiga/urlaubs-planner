@@ -1,7 +1,7 @@
 import { verify, NobleCryptoPlugin, ScureBase32Plugin } from "otplib";
 import { cookies } from "next/headers";
 import { queryDatabase, runDatabase, getOne } from "./db";
-import { verifyPassword, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
+import { verifyPassword, verifyPasswordConstantTime, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
 import { signSession, verifySession, sessionPredatesPasswordChange, SESSION_TTL_MS, type Principal } from "./session-crypto";
 import { isLocked, recordFailure, clearFailures } from "./login-throttle";
 import {
@@ -126,7 +126,9 @@ export async function loginMember(email: string, password: string): Promise<Logi
     [email]
   );
   const user = rows[0];
-  if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+  // Constant-time regardless of whether the account exists (anti-enumeration).
+  const valid = verifyPasswordConstantTime(password, user?.passwordHash ?? null);
+  if (!user || !valid) {
     await recordFailure(key);
     return { ok: false, reason: "invalid" };
   }

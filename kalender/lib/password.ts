@@ -18,6 +18,25 @@ export function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(expected, actual);
 }
 
+// A valid scrypt hash of a throwaway value, computed once at module load.
+// Used to spend an equivalent scrypt cost when no real hash exists, so login
+// timing does not reveal whether an account is registered.
+const DUMMY_HASH = hashPassword(randomBytes(32).toString("hex"));
+
+/**
+ * Always performs one scrypt verification of equivalent cost, even when `stored`
+ * is null/missing (verifies against a dummy hash and returns false). This keeps
+ * login response time independent of whether the account exists, closing the
+ * email-enumeration timing side-channel. Returns true only for a real match.
+ */
+export function verifyPasswordConstantTime(
+  password: string,
+  stored: string | null | undefined
+): boolean {
+  const ok = verifyPassword(password, stored ?? DUMMY_HASH);
+  return stored == null ? false : ok;
+}
+
 export const MIN_PASSWORD_LENGTH = 8;
 
 export type PasswordChangeError = "empty" | "too_short" | "same_as_current";
