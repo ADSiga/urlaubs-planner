@@ -1,7 +1,15 @@
-import { runDatabase } from "./db";
+import { runDatabase, queryDatabase } from "./db";
 import { randomUUID } from "crypto";
 
 export type MailFailureReason = "config_missing" | "send_error";
+
+export interface MailFailureRow {
+  id: string;
+  recipient: string;
+  reason: MailFailureReason;
+  error: string | null;
+  createdAt: string;
+}
 
 /**
  * Persist a mail-delivery failure so it survives beyond a console line.
@@ -17,5 +25,13 @@ export async function recordMailFailure(
   await runDatabase(
     "INSERT INTO MailFailure (id, recipient, reason, error, createdAt) VALUES (?, ?, ?, ?, ?)",
     [randomUUID(), recipient, reason, message, new Date().toISOString()]
+  );
+}
+
+/** Most recent mail failures, newest first, for the admin view. */
+export async function recentMailFailures(limit = 100): Promise<MailFailureRow[]> {
+  return queryDatabase<MailFailureRow>(
+    "SELECT id, recipient, reason, error, createdAt FROM MailFailure ORDER BY createdAt DESC LIMIT ?",
+    [limit]
   );
 }

@@ -79,6 +79,9 @@ export default async function RootLayout({
                 {principal?.role === "admin" && (
                   <Link href="/bosse" className="hover:text-emerald-500 transition-colors">Bosse</Link>
                 )}
+                {principal?.role === "admin" && (
+                  <Link href="/mail-fehler" className="hover:text-emerald-500 transition-colors">Mail-Fehler</Link>
+                )}
                 <Link href="/urlaube" className="relative hover:text-emerald-500 transition-colors flex items-center gap-1.5">
                   <span>Urlaube</span>
                   {bossActive && pendingCount > 0 && (

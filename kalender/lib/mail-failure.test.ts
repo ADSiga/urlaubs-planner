@@ -8,7 +8,7 @@ import { randomUUID } from "crypto";
 const TMP_DB = join(tmpdir(), `mftest-${randomUUID()}.db`);
 process.env.URLAUBE_DB_PATH = TMP_DB;
 
-const { recordMailFailure } = await import("./mail-failure.ts");
+const { recordMailFailure, recentMailFailures } = await import("./mail-failure.ts");
 const { runDatabase, queryDatabase } = await import("./db.ts");
 
 async function resetSchema() {
@@ -43,4 +43,22 @@ test("stringifies a non-Error throwable", async () => {
   await recordMailFailure("u@x.de", "send_error", "raw string fail");
   const rows = await queryDatabase<{ error: string }>("SELECT error FROM MailFailure");
   assert.equal(rows[0].error, "raw string fail");
+});
+
+test("recentMailFailures returns newest first and honors the limit", async () => {
+  // insert with explicit, increasing timestamps so ordering is deterministic
+  for (let i = 0; i < 3; i++) {
+    await runDatabase(
+      "INSERT INTO MailFailure (id, recipient, reason, error, createdAt) VALUES (?, ?, ?, ?, ?)",
+      [`id${i}`, `r${i}@x.de`, "send_error", null, `2026-06-23T10:0${i}:00.000Z`]
+    );
+  }
+  const all = await recentMailFailures();
+  assert.deepEqual(
+    all.map((r) => r.recipient),
+    ["r2@x.de", "r1@x.de", "r0@x.de"]
+  );
+  const limited = await recentMailFailures(1);
+  assert.equal(limited.length, 1);
+  assert.equal(limited[0].recipient, "r2@x.de");
 });
