@@ -8,7 +8,9 @@
     "prod": "rmdir /s /q .next && next build && next start",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./lib/_tsresolve.mjs --test lib/*.test.ts"
   },
   "dependencies": {
     "next": "16.2.6",
