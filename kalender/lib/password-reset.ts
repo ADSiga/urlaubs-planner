@@ -98,13 +98,24 @@ export async function requestPasswordReset(email: string): Promise<void> {
       return;
     }
     const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
-    await sendPasswordResetEmail(email, `${base}/reset/${created.raw}`);
+    // Do NOT await the SMTP send: its round-trip time (hundreds of ms for a real
+    // account vs. an instant return for an unknown email) is an account-enumeration
+    // timing oracle. Send in the background; failures are still recorded durably so
+    // they surface in the mail-fehler admin view. Safe because the app runs as a
+    // persistent Node server (next dev/start), where the event loop drains the promise.
+    void sendPasswordResetEmail(email, `${base}/reset/${created.raw}`).catch((err) =>
+      recordSendFailure(email, err)
+    );
   } catch (err) {
-    console.error("[password-reset] send failed:", err);
-    try {
-      await recordMailFailure(email, "send_error", err);
-    } catch (recErr) {
-      console.error("[password-reset] failed to record mail failure:", recErr);
-    }
+    await recordSendFailure(email, err);
+  }
+}
+
+async function recordSendFailure(email: string, err: unknown): Promise<void> {
+  console.error("[password-reset] send failed:", err);
+  try {
+    await recordMailFailure(email, "send_error", err);
+  } catch (recErr) {
+    console.error("[password-reset] failed to record mail failure:", recErr);
   }
 }

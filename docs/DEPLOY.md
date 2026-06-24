@@ -53,3 +53,52 @@ migration step. The live member data is preserved. (Recent additions: `LoginAtte
   zeroed → reads as empty), even though byte size matches. Do **not** trust an FTP-pulled `dev.db` for
   inspection — verify DB state through the running app instead (e.g. login rate-limiting exercises the
   `LoginAttempt` table).
+
+## Production hardening — TLS + `next start` (TODO, not yet done)
+
+> **Status:** the app currently runs `next dev` over **plain HTTP** on `:3000`. This is the single
+> largest security gap. Everything below is the runbook to close it. It is a deployment change, not a
+> code change, so it lives here rather than in a commit.
+
+### Why it matters
+
+- The session cookie is a **stateless bearer HMAC token** (`lib/session-crypto.ts`). Over plain HTTP it
+  travels in cleartext — anyone on the LAN can sniff it and **replay it for the full 24h TTL**. There is
+  no IP/device binding and no server-side revocation for staff (see "Tier 2" below).
+- `next dev` is not a production server: it ships the **Next.js Dev Tools** button to every visitor and
+  leaks **stack traces / source maps** on errors. A production build (`next start`) removes both.
+
+### The hard dependency (read before flipping anything)
+
+The session cookie sets `secure: process.env.NODE_ENV === "production"` (`lib/auth.ts`). `next start`
+runs with `NODE_ENV=production`, which flips `secure` **on** — and a `secure` cookie is **not sent by the
+browser over plain HTTP**. So switching to production mode **without** TLS silently breaks login (the
+cookie is set but never returned, so every request looks logged-out). **TLS and `next start` must land
+together.**
+
+### Runbook
+
+1. **Stand up TLS in front of the app.** Terminate TLS at a reverse proxy and forward to Next on
+   `127.0.0.1:3000` (bind Next to localhost so `:3000` is no longer directly reachable). Options for an
+   internal LAN host:
+   - Caddy with its built-in internal CA (simplest — auto-certs for `192.168.2.12` / a `.local` name), or
+   - the Apache already on `:80` configured as a `mod_ssl` + `mod_proxy` vhost on `:443`, or
+   - nginx with a self-signed / internal-CA cert.
+2. **Build and run in production mode** on the server instead of `next dev`:
+   ```
+   cd /Kalender/kalender
+   npm ci            # only if deps changed
+   npm run build
+   npm start         # = next start, NODE_ENV=production, serves on :3000 (proxy upstream)
+   ```
+   Keep it under a process manager (pm2 / a systemd or Windows service) so it survives reboots.
+3. **Update `kalender/.env.local`:** set `APP_BASE_URL=https://<host>` (the public HTTPS URL the proxy
+   serves; include the port only if not 443). Reset links must point at the TLS origin.
+4. **Verify** the `secure` session cookie round-trips over HTTPS (log in, confirm the session persists
+   across requests) and that error pages no longer expose stack traces / the dev-tools button.
+5. **Add HSTS** *after* HTTPS is confirmed working — either at the proxy or by adding
+   `Strict-Transport-Security: max-age=31536000; includeSubDomains` to `securityHeaders` in
+   `next.config.ts`. Ramp `max-age` up from a small value first so a misconfig can't lock clients out.
+6. **(Follow-up) Tighten CSP:** the current CSP is `frame-ancestors 'none'` only. Once on a stable
+   production build, add a `script-src` / `style-src` policy and test it against every page before
+   committing (a strict `script-src` can break Next's inline bootstrap if mis-set).
