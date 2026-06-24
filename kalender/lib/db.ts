@@ -77,6 +77,15 @@ export async function initDb(): Promise<void> {
        createdAt TEXT NOT NULL
      )`
   );
+  // Per-principal session-revocation cutoff: any staff session issued before
+  // validFrom is rejected by getPrincipal(). Keyed by principal id (a Boss uuid
+  // or the literal "admin").
+  await runDatabase(
+    `CREATE TABLE IF NOT EXISTS SessionRevocation (
+       principalId TEXT PRIMARY KEY,
+       validFrom TEXT NOT NULL
+     )`
+  );
   const cols = await queryDatabase<{ name: string }>(`PRAGMA table_info(User)`);
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("email")) await runDatabase(`ALTER TABLE User ADD COLUMN email TEXT`);

@@ -19,6 +19,7 @@ const EXPECTED_TABLES: Record<string, string[]> = {
   PasswordResetToken: ["id", "userId", "tokenHash", "expiresAt", "usedAt", "createdAt"],
   LoginAttempt: ["id", "attemptKey", "createdAt"],
   MailFailure: ["id", "recipient", "reason", "error", "createdAt"],
+  SessionRevocation: ["principalId", "validFrom"],
 };
 
 // Indexes initDb() must create.

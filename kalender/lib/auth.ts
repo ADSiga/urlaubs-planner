@@ -4,6 +4,7 @@ import { queryDatabase, runDatabase, getOne } from "./db";
 import { verifyPassword, verifyPasswordConstantTime, hashPassword, validateNewPassword, MIN_PASSWORD_LENGTH } from "./password";
 import { signSession, verifySession, sessionPredatesPasswordChange, SESSION_TTL_MS, type Principal } from "./session-crypto";
 import { isLocked, recordFailure, clearFailures } from "./login-throttle";
+import { revokedSince } from "./session-revocation";
 import {
   isAdminPrincipal,
   canManageDepartmentScope,
@@ -70,16 +71,37 @@ export async function getPrincipal(): Promise<Principal | null> {
   if (!token) return null;
   const session = verifySession(token, sessionSecret());
   if (!session) return null;
-  if (session.principal.role === "member") {
+  const p = session.principal;
+
+  if (p.role === "member") {
     const row = await getOne<{ passwordChangedAt: string | null }>(
       "SELECT passwordChangedAt FROM User WHERE id = ?",
-      [session.principal.id]
+      [p.id]
     );
     if (sessionPredatesPasswordChange(session.iat, row?.passwordChangedAt ?? null)) {
       return null;
     }
+    return p;
   }
-  return session.principal;
+
+  // Staff (admin, boss): honor an explicit revocation cutoff (e.g. TOTP secret
+  // regenerated). Members have their own mechanism (passwordChangedAt) above.
+  const validFrom = await revokedSince(p.id);
+  if (validFrom && session.iat < Date.parse(validFrom)) return null;
+
+  if (p.role === "boss") {
+    // Re-derive identity and scope from the DB rather than trusting the token,
+    // so a deleted boss is rejected at once and department reassignments take
+    // effect immediately instead of lingering for the 24h token lifetime.
+    const boss = await getOne<{ id: string; name: string }>(
+      "SELECT id, name FROM Boss WHERE id = ?",
+      [p.id]
+    );
+    if (!boss) return null;
+    return { role: "boss", id: boss.id, name: boss.name, departmentIds: await deptIdsForBoss(boss.id) };
+  }
+
+  return p; // admin
 }
 
 // NOTE: the isLocked()-then-recordFailure() pattern below (and in loginMember) is not atomic —

@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { queryDatabase, runDatabase } from "@/lib/db";
 import { isAdmin } from "@/lib/auth";
+import { revokeSessions } from "@/lib/session-revocation";
 import { generateBase32Secret } from "@/lib/totp";
 
 export async function handleCreateBoss(formData: FormData) {
@@ -55,6 +56,8 @@ export async function handleRegenerateSecret(formData: FormData) {
     generateBase32Secret(),
     id,
   ]);
+  // The old TOTP code is now dead; kill any live sessions that used it.
+  await revokeSessions(id);
   revalidatePath("/bosse");
 }
 
