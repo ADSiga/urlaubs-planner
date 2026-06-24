@@ -132,12 +132,12 @@ export default function BossList({
             </form>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-zinc-900 dark:text-zinc-50">{b.name}</p>
-                  <p className="text-xs text-zinc-500">{b.departmentNames || "Keine Abteilung"}</p>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-zinc-900 dark:text-zinc-50 truncate">{b.name}</p>
+                  <p className="text-xs text-zinc-500 truncate">{b.departmentNames || "Keine Abteilung"}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setShown(shown === b.id ? null : b.id)}
                     className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
