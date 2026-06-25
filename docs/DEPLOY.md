@@ -89,12 +89,13 @@ earlier draft used Caddy on `:443` — dropped, Apache owns the port; a later dr
 
 Solution: add a **second SSL vhost to the existing Apache** that serves a cert whose **SAN includes
 `IP:192.168.2.12`**, reverse-proxying to the Next prod server on `127.0.0.1:3000`. A purpose-built local
-CA + leaf cert was generated off-box for this; the vhost is [`deploy/00-urlaube-ssl.conf`](../deploy/00-urlaube-ssl.conf).
+CA + leaf cert was generated off-box for this; the vhost is [`deploy/00-aaa-urlaube-ssl.conf`](../deploy/00-aaa-urlaube-ssl.conf).
 Run the steps **on `192.168.2.12` itself** (FTP cannot start/reload services).
 
 **Why `00-` / "default vhost":** a browser hitting a bare IP sends no SNI, so Apache answers with the
-*first* SSL vhost on `:443`. The `00-` prefix makes ours load first → it's the default for IP requests,
-while Laragon's `*.test` sites keep matching by SNI hostname (their cert is untouched).
+*first* SSL vhost on `:443` (Apache parses `sites-enabled\*.conf` alphabetically). Laragon's own default
+vhost is `00-default.conf`, so ours is named **`00-aaa-urlaube-ssl.conf`** to sort *before* it and win the
+no-SNI default; Laragon's `*.test` sites keep matching by SNI hostname (their cert is untouched).
 
 Phases are ordered so the app stays verifiable and **login never breaks**: HTTPS goes live *while still in
 dev mode* (cookie not yet `secure`), and only then do we flip to the production build.
@@ -111,8 +112,9 @@ dev mode* (cookie not yet `secure`), and only then do we flip to the production 
 1. Ensure Apache has the needed modules loaded (uncomment `LoadModule` in
    `C:\laragon\bin\apache\<ver>\conf\httpd.conf` if absent): `mod_ssl`, `mod_proxy`, `mod_proxy_http`,
    `mod_headers`.
-2. Copy `deploy/00-urlaube-ssl.conf` into Laragon's `C:\laragon\etc\apache2\sites-enabled\`, and the three
-   cert files into `C:\laragon\etc\ssl\` (verify those paths match the vhost).
+2. Copy `deploy/00-aaa-urlaube-ssl.conf` into Laragon's `C:\laragon\etc\apache2\sites-enabled\` (the
+   `00-aaa-` prefix must sort before Laragon's `00-default.conf` so ours is the `:443` default), and the
+   three cert files into `C:\laragon\etc\ssl\` (verify those paths match the vhost).
 3. Reload Apache (Laragon menu → Apache → Reload, or `httpd -k restart`). Watch for config errors.
 4. **Checkpoint:** confirm our cert is the IP default (no `-servername`!):
    ```
@@ -149,7 +151,7 @@ nssm set     UrlaubeApp AppDirectory "C:\laragon\www\Kalender\kalender"
 ```
 (`pm2` + `pm2-windows-startup` is an alternative.)
 
-**Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/00-urlaube-ssl.conf`:
+**Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/00-aaa-urlaube-ssl.conf`:
 `Header always set Strict-Transport-Security "max-age=300"` (needs `mod_headers`) and ramp `max-age` up
 (300 → 86400 → 31536000) over a few days so a TLS misconfig can't lock clients out. Do **not** add
 `preload` for a private host.
