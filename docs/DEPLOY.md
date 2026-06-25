@@ -5,7 +5,9 @@
 - **Dev source** = this repo, `C:\laragon\www\Urlaube` (git). All edits happen here.
 - **Deploy server** = `192.168.2.12`, reachable via FTP (path `/Kalender/`, the repo root copied
   there; the Next app is `/Kalender/kalender/`). The app runs with **`next dev` on port 3000**.
-  Port 80 on that host is a separate Apache install (returns 403 for app paths) — it is **not** the app.
+  The host runs a **full Laragon stack**: its Apache holds **both `:80` and `:443`** (the latter with a
+  self-signed `CN=laragon` cert whose SANs cover `*.test`, incl. `Kalender.test`) — that Apache is *not*
+  the app, but it is used as the TLS reverse proxy in the hardening runbook below.
 
 ## Runtime environment file
 
@@ -76,61 +78,69 @@ browser over plain HTTP**. So switching to production mode **without** TLS silen
 cookie is set but never returned, so every request looks logged-out). **TLS and `next start` must land
 together.**
 
-### Runbook (decided: Caddy + internal CA, run on the server)
+### Runbook (decided: Laragon's own Apache as the TLS reverse proxy)
 
-Approach chosen: **Caddy** terminating TLS on `:443` with its built-in internal CA, reverse-proxying to
-the Next app on `127.0.0.1:3000`. Config lives in the repo at [`deploy/Caddyfile`](../deploy/Caddyfile)
-(also pushed to the server at `/Kalender/deploy/Caddyfile`). Commands below are for the **Windows** server
-(the `prod` npm script's `rmdir /s /q` indicates Windows) — swap the service-manager bits for `systemd`
-if `.12` is actually Linux. Run them **on `192.168.2.12` itself** (FTP cannot start processes).
+The deploy server runs a **full Laragon stack** — Apache already terminates TLS on `:443` with a
+self-signed cert (`CN=laragon`) whose SANs include **`Kalender.test`**. So instead of standing up a second
+TLS server, point that Apache at the app: serve `https://Kalender.test` and reverse-proxy to the Next prod
+server on `127.0.0.1:3000`. (An earlier draft of this doc wrongly assumed `:443` was free and used Caddy;
+that approach was dropped because Apache already owns `:443`.)
 
-The phases are ordered so the app is verifiable at each checkpoint and **login never breaks**: HTTPS goes
-live *while still in dev mode* (cookie not yet `secure`), and only then do we flip to the production build.
+Access is **by name** (`Kalender.test`), since that is what the cert matches — *not* by IP (the cert has
+no `192.168.2.12` SAN, which is why hitting the IP over HTTPS gives a name-mismatch warning). The vhost is
+at [`deploy/Kalender.test.conf`](../deploy/Kalender.test.conf) (also FTP'd to `/Kalender/deploy/`). Run the
+steps **on `192.168.2.12` itself** (FTP cannot start/reload services).
 
-**Phase 1 — TLS in front (reversible; app stays in dev mode):**
-1. Install Caddy on the server: `choco install caddy` (or `scoop install caddy`, or drop `caddy.exe` in
-   place). Verify: `caddy version`.
-2. Confirm the Caddyfile is present (FTP'd to `/Kalender/deploy/Caddyfile`).
-3. Trust Caddy's local root so the cert is warning-free on the server: `caddy trust`. Import that root
-   CA on any other device that will use the app (else a one-time TLS warning).
-4. Start Caddy in the foreground to test: `caddy run --config X:\path\to\Kalender\deploy\Caddyfile`.
-5. **Checkpoint:** browse `https://192.168.2.12` → the app loads over TLS, still in dev mode (cookie not
-   yet `secure`, so login works on both HTTP and HTTPS). If the handshake or proxy fails, fix here — no
+Phases are ordered so the app stays verifiable and **login never breaks**: HTTPS goes live *while still in
+dev mode* (cookie not yet `secure`), and only then do we flip to the production build.
+
+**Prereq — DNS/hosts for `Kalender.test`:** Laragon already maps `Kalender.test → 127.0.0.1` in the
+server's hosts file, so it resolves *on the server*. **Every other device** that will use the app needs
+`192.168.2.12  Kalender.test` in its hosts file (or a LAN DNS record), plus Laragon's root CA trusted (or
+it accepts the cert warning once). If you need IP-based access for many clients instead, the Caddy-with-
+IP-SAN approach (in git history) is the alternative.
+
+**Phase 1 — TLS proxy in front (reversible; app stays in dev mode):**
+1. Ensure Apache has the needed modules loaded (uncomment `LoadModule` in
+   `C:\laragon\bin\apache\<ver>\conf\httpd.conf` if absent): `mod_ssl`, `mod_proxy`, `mod_proxy_http`,
+   `mod_headers`.
+2. Copy `deploy/Kalender.test.conf` into Laragon's `C:\laragon\etc\apache2\sites-enabled\`. **Verify the
+   `SSLCertificateFile`/`SSLCertificateKeyFile` paths** match your install (Laragon menu → Apache → ssl).
+3. Reload Apache (Laragon menu → Apache → Reload, or `httpd -k restart`). Watch for config errors.
+4. **Checkpoint:** browse `https://Kalender.test` on the server → the app loads over TLS, still in dev
+   mode (cookie not yet `secure`, so login works). If the proxy 502s or Apache won't start, fix here — no
    production change has been made yet.
 
 **Phase 2 — production build + cutover (the cookie-`secure` flip happens here):**
-6. Build: `cd /Kalender/kalender` then `npm run build` (`npm ci` first only if deps changed).
-7. Stop the running `next dev` process.
-8. Start the production server bound to localhost (so `:3000` is reachable only via Caddy).
+5. Build: `cd /Kalender/kalender` then `npm run build` (`npm ci` first only if deps changed).
+6. Stop the running `next dev` process.
+7. Start the production server bound to localhost (so `:3000` is reachable only via Apache).
    `next start` sets `NODE_ENV=production` automatically, which flips the session cookie to `secure`:
    ```
    npx next start -H 127.0.0.1 -p 3000
    ```
-   Because traffic now arrives over Caddy's HTTPS, the `secure` cookie round-trips and login works.
+   Because traffic now arrives over Apache's HTTPS, the `secure` cookie round-trips and login works.
 
 **Phase 3 — env + verify:**
-9. Edit `kalender/.env.local`: `APP_BASE_URL=https://192.168.2.12` (no port — Caddy is on 443). Restart
+8. Edit `kalender/.env.local`: `APP_BASE_URL=https://Kalender.test` (no port — Apache is on 443). Restart
    the `next start` process so the new env is read (it loads env at startup, not on hot-reload).
-10. **Verify:** log in at `https://192.168.2.12`, navigate between pages and confirm the session persists
-    (proves the `secure` cookie round-trips); confirm there is **no** Next.js Dev Tools button and that an
-    error page shows no stack trace / source maps; trigger a password reset and confirm the emailed link
-    is `https://192.168.2.12/reset/<token>`.
+9. **Verify:** log in at `https://Kalender.test`, navigate between pages and confirm the session persists
+   (proves the `secure` cookie round-trips); confirm there is **no** Next.js Dev Tools button and that an
+   error page shows no stack trace / source maps; trigger a password reset and confirm the emailed link is
+   `https://Kalender.test/reset/<token>`.
 
-**Phase 4 — keep both processes alive (survive reboot):**
-11. Wrap **Caddy** and the **Next prod server** as Windows services so they restart on boot, e.g. with
-    [NSSM](https://nssm.cc/):
-    ```
-    nssm install UrlaubeCaddy  "C:\path\to\caddy.exe" run --config "X:\...\Kalender\deploy\Caddyfile"
-    nssm install UrlaubeApp    "C:\Program Files\nodejs\npx.cmd" next start -H 127.0.0.1 -p 3000
-    nssm set     UrlaubeApp    AppDirectory "X:\...\Kalender\kalender"
-    ```
-    (On Linux: two `systemd` units instead.) `pm2` + `pm2-windows-startup` is an alternative for the app.
+**Phase 4 — keep the prod server alive (survive reboot):** Apache is already a Laragon-managed service.
+Wrap the **Next prod server** so it restarts on boot, e.g. with [NSSM](https://nssm.cc/):
+```
+nssm install UrlaubeApp "C:\Program Files\nodejs\npx.cmd" next start -H 127.0.0.1 -p 3000
+nssm set     UrlaubeApp AppDirectory "C:\laragon\www\Kalender\kalender"
+```
+(`pm2` + `pm2-windows-startup` is an alternative.)
 
-**Phase 5 — HSTS (only after Phase 3 verifies clean):**
-12. Add `Strict-Transport-Security`. Easiest at Caddy — add to the site block in `deploy/Caddyfile`:
-    `header Strict-Transport-Security "max-age=300"` and ramp `max-age` up (300 → 86400 → 31536000) over
-    a few days so a TLS misconfig can't lock clients out. (Alternatively add it to `securityHeaders` in
-    `next.config.ts`.) Do **not** add `preload` for a private LAN host.
+**Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/Kalender.test.conf`:
+`Header always set Strict-Transport-Security "max-age=300"` (needs `mod_headers`) and ramp `max-age` up
+(300 → 86400 → 31536000) over a few days so a TLS misconfig can't lock clients out. Do **not** add
+`preload` for a private host.
 
 **Phase 6 — (follow-up) tighten CSP:** the current CSP is `frame-ancestors 'none'` only. On a stable prod
 build, add a `script-src` / `style-src` policy and test it against every page before committing (a strict
@@ -140,5 +150,4 @@ build, add a `script-src` / `style-src` policy and test it against every page be
 
 A `secure` cookie that won't round-trip makes every request look logged-out. To revert fast: stop the
 `next start` process and restart `next dev` (`NODE_ENV` unset → `secure` off, login works over plain HTTP
-again on `:3000`). Caddy can stay up (it harmlessly proxies dev) or be stopped. Then diagnose the TLS path
-before retrying Phase 2.
+again on `:3000`). The Apache vhost can stay (it harmlessly proxies dev). Then diagnose before retrying.
