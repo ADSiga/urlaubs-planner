@@ -78,38 +78,50 @@ browser over plain HTTP**. So switching to production mode **without** TLS silen
 cookie is set but never returned, so every request looks logged-out). **TLS and `next start` must land
 together.**
 
-### Runbook (decided: Laragon's own Apache as the TLS reverse proxy)
+### Runbook (decided: Laragon's Apache + an IP-SAN cert, accessed by IP)
 
-The deploy server runs a **full Laragon stack** — Apache already terminates TLS on `:443` with a
-self-signed cert (`CN=laragon`) whose SANs include **`Kalender.test`**. So instead of standing up a second
-TLS server, point that Apache at the app: serve `https://Kalender.test` and reverse-proxy to the Next prod
-server on `127.0.0.1:3000`. (An earlier draft of this doc wrongly assumed `:443` was free and used Caddy;
-that approach was dropped because Apache already owns `:443`.)
+The deploy server runs a **full Laragon stack** — Apache already terminates TLS on `:443` for several
+`*.test` sites (its self-signed `CN=laragon` cert lists `crm.test`, `siga-crm.test`, … and `Kalender.test`).
+So we **can't** evict Apache from `:443` (it serves those other sites), and we **can't** rely on
+`Kalender.test` either, because **most users reach the app by IP** and can't all get a hosts entry. (An
+earlier draft used Caddy on `:443` — dropped, Apache owns the port; a later draft used name-based
+`Kalender.test` — dropped, clients hit the IP.)
 
-Access is **by name** (`Kalender.test`), since that is what the cert matches — *not* by IP (the cert has
-no `192.168.2.12` SAN, which is why hitting the IP over HTTPS gives a name-mismatch warning). The vhost is
-at [`deploy/Kalender.test.conf`](../deploy/Kalender.test.conf) (also FTP'd to `/Kalender/deploy/`). Run the
-steps **on `192.168.2.12` itself** (FTP cannot start/reload services).
+Solution: add a **second SSL vhost to the existing Apache** that serves a cert whose **SAN includes
+`IP:192.168.2.12`**, reverse-proxying to the Next prod server on `127.0.0.1:3000`. A purpose-built local
+CA + leaf cert was generated off-box for this; the vhost is [`deploy/00-urlaube-ssl.conf`](../deploy/00-urlaube-ssl.conf).
+Run the steps **on `192.168.2.12` itself** (FTP cannot start/reload services).
+
+**Why `00-` / "default vhost":** a browser hitting a bare IP sends no SNI, so Apache answers with the
+*first* SSL vhost on `:443`. The `00-` prefix makes ours load first → it's the default for IP requests,
+while Laragon's `*.test` sites keep matching by SNI hostname (their cert is untouched).
 
 Phases are ordered so the app stays verifiable and **login never breaks**: HTTPS goes live *while still in
 dev mode* (cookie not yet `secure`), and only then do we flip to the production build.
 
-**Prereq — DNS/hosts for `Kalender.test`:** Laragon already maps `Kalender.test → 127.0.0.1` in the
-server's hosts file, so it resolves *on the server*. **Every other device** that will use the app needs
-`192.168.2.12  Kalender.test` in its hosts file (or a LAN DNS record), plus Laragon's root CA trusted (or
-it accepts the cert warning once). If you need IP-based access for many clients instead, the Caddy-with-
-IP-SAN approach (in git history) is the alternative.
+**Prereq — cert files on the server (staged via FTP at `/Kalender/deploy/tls/`):**
+- `urlaube.crt` + `urlaube.key` → copy to `C:\laragon\etc\ssl\` (the paths in the vhost). The `.key` is
+  **secret** — do not commit it or expose it.
+- `urlaube-ca.crt` (the local CA) → also copy to `C:\laragon\etc\ssl\` (used as `SSLCertificateChainFile`).
+  **Import this one on each client** (Windows: *Trusted Root Certification Authorities*; Firefox:
+  *Authorities*) to get a warning-free cert. *Optional* — without it, clients get one ordinary "accept"
+  warning per device; the **encryption (the actual security win) works regardless.**
 
-**Phase 1 — TLS proxy in front (reversible; app stays in dev mode):**
+**Phase 1 — TLS vhost in front (reversible; app stays in dev mode):**
 1. Ensure Apache has the needed modules loaded (uncomment `LoadModule` in
    `C:\laragon\bin\apache\<ver>\conf\httpd.conf` if absent): `mod_ssl`, `mod_proxy`, `mod_proxy_http`,
    `mod_headers`.
-2. Copy `deploy/Kalender.test.conf` into Laragon's `C:\laragon\etc\apache2\sites-enabled\`. **Verify the
-   `SSLCertificateFile`/`SSLCertificateKeyFile` paths** match your install (Laragon menu → Apache → ssl).
+2. Copy `deploy/00-urlaube-ssl.conf` into Laragon's `C:\laragon\etc\apache2\sites-enabled\`, and the three
+   cert files into `C:\laragon\etc\ssl\` (verify those paths match the vhost).
 3. Reload Apache (Laragon menu → Apache → Reload, or `httpd -k restart`). Watch for config errors.
-4. **Checkpoint:** browse `https://Kalender.test` on the server → the app loads over TLS, still in dev
-   mode (cookie not yet `secure`, so login works). If the proxy 502s or Apache won't start, fix here — no
-   production change has been made yet.
+4. **Checkpoint:** confirm our cert is the IP default (no `-servername`!):
+   ```
+   openssl s_client -connect 192.168.2.12:443 </dev/null | openssl x509 -noout -subject
+   # must print:  subject=O=Urlaube, CN=192.168.2.12
+   ```
+   Then browse `https://192.168.2.12` on the server → app loads over TLS, still in dev mode (cookie not
+   yet `secure`, login works). If `s_client` shows the old `CN=laragon` cert, our vhost isn't loading
+   first — rename it earlier or move Laragon's default SSL vhost after it. Fix here; no prod change yet.
 
 **Phase 2 — production build + cutover (the cookie-`secure` flip happens here):**
 5. Build: `cd /Kalender/kalender` then `npm run build` (`npm ci` first only if deps changed).
@@ -122,12 +134,12 @@ IP-SAN approach (in git history) is the alternative.
    Because traffic now arrives over Apache's HTTPS, the `secure` cookie round-trips and login works.
 
 **Phase 3 — env + verify:**
-8. Edit `kalender/.env.local`: `APP_BASE_URL=https://Kalender.test` (no port — Apache is on 443). Restart
+8. Edit `kalender/.env.local`: `APP_BASE_URL=https://192.168.2.12` (no port — Apache is on 443). Restart
    the `next start` process so the new env is read (it loads env at startup, not on hot-reload).
-9. **Verify:** log in at `https://Kalender.test`, navigate between pages and confirm the session persists
+9. **Verify:** log in at `https://192.168.2.12`, navigate between pages and confirm the session persists
    (proves the `secure` cookie round-trips); confirm there is **no** Next.js Dev Tools button and that an
    error page shows no stack trace / source maps; trigger a password reset and confirm the emailed link is
-   `https://Kalender.test/reset/<token>`.
+   `https://192.168.2.12/reset/<token>`.
 
 **Phase 4 — keep the prod server alive (survive reboot):** Apache is already a Laragon-managed service.
 Wrap the **Next prod server** so it restarts on boot, e.g. with [NSSM](https://nssm.cc/):
@@ -137,7 +149,7 @@ nssm set     UrlaubeApp AppDirectory "C:\laragon\www\Kalender\kalender"
 ```
 (`pm2` + `pm2-windows-startup` is an alternative.)
 
-**Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/Kalender.test.conf`:
+**Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/00-urlaube-ssl.conf`:
 `Header always set Strict-Transport-Security "max-age=300"` (needs `mod_headers`) and ramp `max-age` up
 (300 → 86400 → 31536000) over a few days so a TLS misconfig can't lock clients out. Do **not** add
 `preload` for a private host.
