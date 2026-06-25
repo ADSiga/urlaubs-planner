@@ -144,12 +144,16 @@ dev mode* (cookie not yet `secure`), and only then do we flip to the production 
    `https://192.168.2.12/reset/<token>`.
 
 **Phase 4 — keep the prod server alive (survive reboot):** Apache is already a Laragon-managed service.
-Wrap the **Next prod server** so it restarts on boot, e.g. with [NSSM](https://nssm.cc/):
-```
-nssm install UrlaubeApp "C:\Program Files\nodejs\npx.cmd" next start -H 127.0.0.1 -p 3000
-nssm set     UrlaubeApp AppDirectory "C:\laragon\www\Kalender\kalender"
-```
-(`pm2` + `pm2-windows-startup` is an alternative.)
+Wrap the **Next prod server** as a Windows service with [NSSM](https://nssm.cc/). Use the committed
+script [`deploy/install-urlaube-service.cmd`](../deploy/install-urlaube-service.cmd) — run it **as
+Administrator** on the server. It registers the service pointing at **`node.exe` + Next's bin** (not
+`npx.cmd`/`npm.cmd`, which are batch wrappers and misbehave under the service manager), binds to
+`127.0.0.1:3000`, sets auto-start, and logs to `C:\laragon\www\Kalender\logs\`.
+
+Prereqs the script checks/needs: NSSM on PATH (`choco install nssm` or download from nssm.cc), Node on
+PATH, `npm run build` already done, and **stop any manual `next start` first** (port 3000 conflict).
+Verify after: `nssm status UrlaubeApp` → `SERVICE_RUNNING`. (`pm2` + `pm2-windows-startup` is an
+alternative.)
 
 **Phase 5 — HSTS (only after Phase 3 verifies clean):** add to the vhost in `deploy/00-aaa-urlaube-ssl.conf`:
 `Header always set Strict-Transport-Security "max-age=300"` (needs `mod_headers`) and ramp `max-age` up
