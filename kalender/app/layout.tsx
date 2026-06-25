@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
-import path from "path";
-import sqlite3 from "sqlite3";
-import { initDb } from "@/lib/db";
+import { initDb, getOne } from "@/lib/db";
 import { getPrincipal } from "@/lib/auth";
 import AdminToggle from "./AdminToggle";
 import { handleStaffLogin, handleMemberLogin, handleLogout, handleChangePassword } from "./actions_auth";
@@ -15,35 +13,26 @@ export const metadata: Metadata = {
 
 // Hilfsfunktion für den Layout-Status
 async function getPendingCount(): Promise<number> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READONLY);
-
-  return new Promise((resolve) => {
-    db.get("SELECT COUNT(*) as count FROM LeaveRequest WHERE status = 'PENDING'", [], (err, row: any) => {
-      db.close();
-      if (err) resolve(0);
-      else resolve(row?.count || 0);
-    });
-  });
+  try {
+    const row = await getOne<{ count: number }>(
+      "SELECT COUNT(*) as count FROM LeaveRequest WHERE status = 'PENDING'"
+    );
+    return row?.count || 0;
+  } catch {
+    return 0;
+  }
 }
 
 async function getSubstituteCount(memberId: string): Promise<number> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READONLY);
-
-  return new Promise((resolve) => {
-    db.get(
+  try {
+    const row = await getOne<{ count: number }>(
       "SELECT COUNT(*) as count FROM LeaveRequest WHERE status = 'WARTE_VERTRETUNG' AND substituteId = ?",
-      [memberId],
-      (err, row: any) => {
-        db.close();
-        if (err) resolve(0);
-        else resolve(row?.count || 0);
-      }
+      [memberId]
     );
-  });
+    return row?.count || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export default async function RootLayout({

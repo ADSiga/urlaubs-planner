@@ -1,22 +1,8 @@
-import path from "path";
-import sqlite3 from "sqlite3";
 import Link from "next/link";
 import CalendarGrid from "./CalendarGrid";
+import { queryDatabase } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-
-function queryDatabase<T>(sql: string, params: any[] = []): Promise<T[]> {
-  const dbPath = path.resolve(process.cwd(), "../dev.db");
-  const sqlite = sqlite3.verbose();
-  const db = new sqlite.Database(dbPath, sqlite.OPEN_READWRITE);
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      db.close();
-      if (err) reject(err);
-      else resolve(rows as T[]);
-    });
-  });
-}
 
 interface DbLeaveRequest {
   id: string;
