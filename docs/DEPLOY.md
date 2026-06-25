@@ -76,29 +76,69 @@ browser over plain HTTP**. So switching to production mode **without** TLS silen
 cookie is set but never returned, so every request looks logged-out). **TLS and `next start` must land
 together.**
 
-### Runbook
+### Runbook (decided: Caddy + internal CA, run on the server)
 
-1. **Stand up TLS in front of the app.** Terminate TLS at a reverse proxy and forward to Next on
-   `127.0.0.1:3000` (bind Next to localhost so `:3000` is no longer directly reachable). Options for an
-   internal LAN host:
-   - Caddy with its built-in internal CA (simplest — auto-certs for `192.168.2.12` / a `.local` name), or
-   - the Apache already on `:80` configured as a `mod_ssl` + `mod_proxy` vhost on `:443`, or
-   - nginx with a self-signed / internal-CA cert.
-2. **Build and run in production mode** on the server instead of `next dev`:
+Approach chosen: **Caddy** terminating TLS on `:443` with its built-in internal CA, reverse-proxying to
+the Next app on `127.0.0.1:3000`. Config lives in the repo at [`deploy/Caddyfile`](../deploy/Caddyfile)
+(also pushed to the server at `/Kalender/deploy/Caddyfile`). Commands below are for the **Windows** server
+(the `prod` npm script's `rmdir /s /q` indicates Windows) — swap the service-manager bits for `systemd`
+if `.12` is actually Linux. Run them **on `192.168.2.12` itself** (FTP cannot start processes).
+
+The phases are ordered so the app is verifiable at each checkpoint and **login never breaks**: HTTPS goes
+live *while still in dev mode* (cookie not yet `secure`), and only then do we flip to the production build.
+
+**Phase 1 — TLS in front (reversible; app stays in dev mode):**
+1. Install Caddy on the server: `choco install caddy` (or `scoop install caddy`, or drop `caddy.exe` in
+   place). Verify: `caddy version`.
+2. Confirm the Caddyfile is present (FTP'd to `/Kalender/deploy/Caddyfile`).
+3. Trust Caddy's local root so the cert is warning-free on the server: `caddy trust`. Import that root
+   CA on any other device that will use the app (else a one-time TLS warning).
+4. Start Caddy in the foreground to test: `caddy run --config X:\path\to\Kalender\deploy\Caddyfile`.
+5. **Checkpoint:** browse `https://192.168.2.12` → the app loads over TLS, still in dev mode (cookie not
+   yet `secure`, so login works on both HTTP and HTTPS). If the handshake or proxy fails, fix here — no
+   production change has been made yet.
+
+**Phase 2 — production build + cutover (the cookie-`secure` flip happens here):**
+6. Build: `cd /Kalender/kalender` then `npm run build` (`npm ci` first only if deps changed).
+7. Stop the running `next dev` process.
+8. Start the production server bound to localhost (so `:3000` is reachable only via Caddy).
+   `next start` sets `NODE_ENV=production` automatically, which flips the session cookie to `secure`:
    ```
-   cd /Kalender/kalender
-   npm ci            # only if deps changed
-   npm run build
-   npm start         # = next start, NODE_ENV=production, serves on :3000 (proxy upstream)
+   npx next start -H 127.0.0.1 -p 3000
    ```
-   Keep it under a process manager (pm2 / a systemd or Windows service) so it survives reboots.
-3. **Update `kalender/.env.local`:** set `APP_BASE_URL=https://<host>` (the public HTTPS URL the proxy
-   serves; include the port only if not 443). Reset links must point at the TLS origin.
-4. **Verify** the `secure` session cookie round-trips over HTTPS (log in, confirm the session persists
-   across requests) and that error pages no longer expose stack traces / the dev-tools button.
-5. **Add HSTS** *after* HTTPS is confirmed working — either at the proxy or by adding
-   `Strict-Transport-Security: max-age=31536000; includeSubDomains` to `securityHeaders` in
-   `next.config.ts`. Ramp `max-age` up from a small value first so a misconfig can't lock clients out.
-6. **(Follow-up) Tighten CSP:** the current CSP is `frame-ancestors 'none'` only. Once on a stable
-   production build, add a `script-src` / `style-src` policy and test it against every page before
-   committing (a strict `script-src` can break Next's inline bootstrap if mis-set).
+   Because traffic now arrives over Caddy's HTTPS, the `secure` cookie round-trips and login works.
+
+**Phase 3 — env + verify:**
+9. Edit `kalender/.env.local`: `APP_BASE_URL=https://192.168.2.12` (no port — Caddy is on 443). Restart
+   the `next start` process so the new env is read (it loads env at startup, not on hot-reload).
+10. **Verify:** log in at `https://192.168.2.12`, navigate between pages and confirm the session persists
+    (proves the `secure` cookie round-trips); confirm there is **no** Next.js Dev Tools button and that an
+    error page shows no stack trace / source maps; trigger a password reset and confirm the emailed link
+    is `https://192.168.2.12/reset/<token>`.
+
+**Phase 4 — keep both processes alive (survive reboot):**
+11. Wrap **Caddy** and the **Next prod server** as Windows services so they restart on boot, e.g. with
+    [NSSM](https://nssm.cc/):
+    ```
+    nssm install UrlaubeCaddy  "C:\path\to\caddy.exe" run --config "X:\...\Kalender\deploy\Caddyfile"
+    nssm install UrlaubeApp    "C:\Program Files\nodejs\npx.cmd" next start -H 127.0.0.1 -p 3000
+    nssm set     UrlaubeApp    AppDirectory "X:\...\Kalender\kalender"
+    ```
+    (On Linux: two `systemd` units instead.) `pm2` + `pm2-windows-startup` is an alternative for the app.
+
+**Phase 5 — HSTS (only after Phase 3 verifies clean):**
+12. Add `Strict-Transport-Security`. Easiest at Caddy — add to the site block in `deploy/Caddyfile`:
+    `header Strict-Transport-Security "max-age=300"` and ramp `max-age` up (300 → 86400 → 31536000) over
+    a few days so a TLS misconfig can't lock clients out. (Alternatively add it to `securityHeaders` in
+    `next.config.ts`.) Do **not** add `preload` for a private LAN host.
+
+**Phase 6 — (follow-up) tighten CSP:** the current CSP is `frame-ancestors 'none'` only. On a stable prod
+build, add a `script-src` / `style-src` policy and test it against every page before committing (a strict
+`script-src` can break Next's inline bootstrap if mis-set).
+
+### Rollback (if login breaks after Phase 2)
+
+A `secure` cookie that won't round-trip makes every request look logged-out. To revert fast: stop the
+`next start` process and restart `next dev` (`NODE_ENV` unset → `secure` off, login works over plain HTTP
+again on `:3000`). Caddy can stay up (it harmlessly proxies dev) or be stopped. Then diagnose the TLS path
+before retrying Phase 2.
